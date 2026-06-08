@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- A standalone reactor (not part of the published SDK) demonstrating
+       each integration. Depends on the locally installed com.clavenar:agent-sdk;
+       run `mvn -DskipTests install` in the repo root first, then
+       `mvn -f examples/pom.xml compile`. -->
+  <groupId>com.clavenar.examples</groupId>
+  <artifactId>clavenar-agent-sdk-examples</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <clavenar.version>1.0.0</clavenar.version>
+  </properties>
+
+  <modules>
+    <module>custom-dispatcher</module>
+    <module>realtime</module>
+    <module>native-openai</module>
+    <module>native-anthropic</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.clavenar</groupId>
+        <artifactId>agent-sdk</artifactId>
+        <version>${clavenar.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
