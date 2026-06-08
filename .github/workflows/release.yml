@@ -1,0 +1,48 @@
+name: release
+
+# Push a tag matching v* (e.g. v1.0.0) that equals the POM <version> to
+# publish to Maven Central. Requires the com.clavenar namespace + GPG key
+# and these repo secrets: CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD,
+# GPG_PRIVATE_KEY, GPG_PASSPHRASE. See CONTRIBUTING.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Verify tag matches project version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          POM="$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [ "$TAG" != "$POM" ]; then
+            echo "::error::tag '$GITHUB_REF_NAME' (version '$TAG') does not match pom.xml '$POM'"
+            exit 1
+          fi
+
+      - run: mvn -B verify
+
+      - name: Deploy to Maven Central
+        run: mvn -B -Prelease -DskipTests deploy
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}

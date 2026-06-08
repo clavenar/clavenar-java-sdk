@@ -1,0 +1,239 @@
+package com.clavenar.agentsdk;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+
+class TransportTest {
+
+  private static Verdict inspect(ClavenarOptions opts) {
+    return new ClavenarInspector(opts).inspect(Fixtures.sampleCall());
+  }
+
+  @Test
+  void allow() throws Exception {
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(200, null).corr("c1"))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals(VerdictKind.ALLOW, v.kind());
+      assertEquals("c1", v.correlationId());
+    }
+  }
+
+  @Test
+  void deny() throws Exception {
+    String body =
+        """
+        {"error":"security_violation","reasons":["nope"],"review_reasons":["r"],"intent_category":"Destruction","layer":"policy"}""";
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(403, body).corr("c1"))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals(VerdictKind.DENY, v.kind());
+      assertEquals(java.util.List.of("nope"), v.reasons());
+      assertEquals("Destruction", v.intentCategory());
+      assertEquals("policy", v.layer());
+      assertEquals("c1", v.correlationId());
+    }
+  }
+
+  @Test
+  void denyNormalization() throws Exception {
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(403, "{\"error\":\"x\"}"))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertTrue(v.reasons().isEmpty());
+      assertTrue(v.reviewReasons().isEmpty());
+      assertEquals("", v.intentCategory());
+      assertNull(v.layer());
+    }
+  }
+
+  @Test
+  void denyBadShapeIsTransport() throws Exception {
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(403, "{\"foo\":1}"))) {
+      ClavenarTransportException e =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(403, e.status());
+    }
+  }
+
+  @Test
+  void pendingHeaderWins() throws Exception {
+    String body = "{\"status\":\"pending\",\"correlation_id\":\"cb\",\"review_reasons\":[\"x\"]}";
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(202, body).corr("ch"))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals(VerdictKind.PENDING, v.kind());
+      assertEquals("ch", v.correlationId());
+      assertEquals(java.util.List.of("x"), v.reviewReasons());
+    }
+  }
+
+  @Test
+  void pendingBodyFallback() throws Exception {
+    String body = "{\"status\":\"pending\",\"correlation_id\":\"cb\",\"review_reasons\":[]}";
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(202, body))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals("cb", v.correlationId());
+    }
+  }
+
+  @Test
+  void pendingBothEmpty() throws Exception {
+    String body = "{\"status\":\"pending\",\"correlation_id\":\"\",\"review_reasons\":[]}";
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(202, body))) {
+      ClavenarTransportException e =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(202, e.status());
+      assertTrue(e.getMessage().contains("missing correlation id"));
+    }
+  }
+
+  @Test
+  void unexpectedStatus() throws Exception {
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(500, "boom"))) {
+      ClavenarTransportException e =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(500, e.status());
+    }
+  }
+
+  @Test
+  void networkError() throws Exception {
+    String url;
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(200, null))) {
+      url = srv.baseUrl;
+    }
+    ClavenarTransportException e =
+        assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(url)));
+    assertEquals(0, e.status());
+  }
+
+  @Test
+  void timeout() throws Exception {
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> {
+              try {
+                Thread.sleep(200);
+              } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+              }
+              return TestServer.Response.of(200, null);
+            })) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .retry(new RetryOptions(1, Duration.ofMillis(1)))
+              .timeout(Duration.ofMillis(40))
+              .build();
+      ClavenarTransportException e =
+          assertThrows(ClavenarTransportException.class, () -> inspect(opts));
+      assertTrue(e.getMessage().contains("timed out"));
+    }
+  }
+
+  @Test
+  void retryThenSuccess() throws Exception {
+    AtomicInteger n = new AtomicInteger();
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) ->
+                n.incrementAndGet() < 3
+                    ? TestServer.Response.of(503, null)
+                    : TestServer.Response.of(200, null))) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .retry(new RetryOptions(3, Duration.ofMillis(1)))
+              .build();
+      assertEquals(VerdictKind.ALLOW, inspect(opts).kind());
+      assertEquals(3, n.get());
+    }
+  }
+
+  @Test
+  void noRetryOn4xx() throws Exception {
+    AtomicInteger n = new AtomicInteger();
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> {
+              n.incrementAndGet();
+              return TestServer.Response.of(400, null);
+            })) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .retry(new RetryOptions(3, Duration.ofMillis(1)))
+              .build();
+      assertThrows(ClavenarTransportException.class, () -> inspect(opts));
+      assertEquals(1, n.get());
+    }
+  }
+
+  @Test
+  void maxAttemptsBelowOne() throws Exception {
+    ClavenarOptions opts =
+        ClavenarOptions.builder("http://127.0.0.1:9")
+            .retry(new RetryOptions(0, Duration.ofMillis(1)))
+            .build();
+    ClavenarTransportException e =
+        assertThrows(ClavenarTransportException.class, () -> inspect(opts));
+    assertTrue(e.getMessage().contains("maxAttempts"));
+  }
+
+  @Test
+  void requestEnvelope() throws Exception {
+    AtomicReference<String> gotBody = new AtomicReference<>();
+    AtomicReference<String> gotAuth = new AtomicReference<>();
+    AtomicReference<String> gotCt = new AtomicReference<>();
+    AtomicReference<String> gotPath = new AtomicReference<>();
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> {
+              gotBody.set(b);
+              gotPath.set(p);
+              gotAuth.set(h.getFirst("Authorization"));
+              gotCt.set(h.getFirst("Content-Type"));
+              return TestServer.Response.of(200, null);
+            })) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .token("tok")
+              .retry(new RetryOptions(1, Duration.ofMillis(1)))
+              .build();
+      inspect(opts);
+      assertEquals("/mcp", gotPath.get());
+      assertEquals("application/json", gotCt.get());
+      assertEquals("Bearer tok", gotAuth.get());
+      JsonNode env = Json.MAPPER.readTree(gotBody.get());
+      assertEquals("2.0", env.get("jsonrpc").asText());
+      assertEquals("tools/call", env.get("method").asText());
+      assertEquals("toolu_1", env.get("id").asText());
+      assertEquals("delete_user", env.get("params").get("name").asText());
+      assertEquals("alice", env.get("params").get("arguments").get("user").asText());
+    }
+  }
+
+  @Test
+  void joinUrl() {
+    assertEquals("http://x/mcp", Transport.joinUrl("http://x/", "/mcp"));
+    assertEquals("http://x/mcp", Transport.joinUrl("http://x", "mcp"));
+    assertEquals("https://gw/clavenar/mcp", Transport.joinUrl("https://gw/clavenar", "/mcp"));
+  }
+
+  @Test
+  void configErrorOnBadEndpoint() {
+    assertThrows(
+        ClavenarConfigException.class,
+        () -> new ClavenarInspector(ClavenarOptions.builder("").build()));
+    assertThrows(
+        ClavenarConfigException.class,
+        () -> new ClavenarInspector(ClavenarOptions.builder("not-a-url").build()));
+  }
+}
