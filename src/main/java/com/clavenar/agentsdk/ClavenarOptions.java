@@ -20,6 +20,7 @@ public final class ClavenarOptions {
   private final HttpClient httpClient;
   private final BiConsumer<Verdict, VerdictContext> onVerdict;
   private final BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
+  private final boolean devMode;
 
   private ClavenarOptions(Builder b) {
     this.endpoint = b.endpoint;
@@ -30,6 +31,7 @@ public final class ClavenarOptions {
     this.httpClient = b.httpClient;
     this.onVerdict = b.onVerdict;
     this.onPolicyError = b.onPolicyError;
+    this.devMode = b.devMode;
   }
 
   public static Builder builder(String endpoint) {
@@ -69,6 +71,14 @@ public final class ClavenarOptions {
     return onPolicyError;
   }
 
+  /**
+   * Developer mode: render the gateway's verbose-verdict detail to stderr on a denied call before
+   * throwing. Off by default. Dev/staging only — detailed denials are an attacker oracle.
+   */
+  public boolean devMode() {
+    return devMode;
+  }
+
   void validate() {
     if (endpoint == null || endpoint.isEmpty()) {
       throw new ClavenarConfigException("clavenar: endpoint is required");
@@ -97,6 +107,7 @@ public final class ClavenarOptions {
     private HttpClient httpClient;
     private BiConsumer<Verdict, VerdictContext> onVerdict;
     private BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
+    private boolean devMode;
 
     private Builder(String endpoint) {
       this.endpoint = endpoint;
@@ -141,6 +152,15 @@ public final class ClavenarOptions {
     public Builder onPolicyError(
         BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError) {
       this.onPolicyError = onPolicyError;
+      return this;
+    }
+
+    /**
+     * Render the gateway's verbose-verdict detail to stderr on a denied call. Dev/staging only —
+     * detailed denials are an attacker oracle.
+     */
+    public Builder devMode(boolean devMode) {
+      this.devMode = devMode;
       return this;
     }
 

@@ -13,6 +13,7 @@ public final class Verdict {
   private final List<String> reviewReasons;
   private final String intentCategory;
   private final String layer;
+  private final VerdictDetail detail;
 
   Verdict(
       VerdictKind kind,
@@ -21,12 +22,24 @@ public final class Verdict {
       List<String> reviewReasons,
       String intentCategory,
       String layer) {
+    this(kind, correlationId, reasons, reviewReasons, intentCategory, layer, null);
+  }
+
+  Verdict(
+      VerdictKind kind,
+      String correlationId,
+      List<String> reasons,
+      List<String> reviewReasons,
+      String intentCategory,
+      String layer,
+      VerdictDetail detail) {
     this.kind = kind;
     this.correlationId = correlationId;
     this.reasons = reasons == null ? List.of() : List.copyOf(reasons);
     this.reviewReasons = reviewReasons == null ? List.of() : List.copyOf(reviewReasons);
     this.intentCategory = intentCategory == null ? "" : intentCategory;
     this.layer = layer;
+    this.detail = detail;
   }
 
   public VerdictKind kind() {
@@ -53,5 +66,10 @@ public final class Verdict {
   /** The stage that produced a deny when reported (brain, policy, hil, ...), else null. */
   public String layer() {
     return layer;
+  }
+
+  /** The verbose-verdict per-detector breakdown when the gateway opts in, else null. */
+  public VerdictDetail detail() {
+    return detail;
   }
 }

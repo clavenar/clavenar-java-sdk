@@ -84,6 +84,42 @@ enforce mode, to unchecked exceptions rooted at `ClavenarException`:
 | `ClavenarTransportException` | clavenar unreachable / unexpected response — `status()` (0 = network) |
 | `ClavenarConfigException` | bad options, or a model tool call with unparseable arguments |
 
+## Debugging a denial
+
+`ClavenarDenied` carries `reasons()`, `layer()`, and `correlationId()`. To
+see *which detector* fired, run the gateway with
+`CLAVENAR_PROXY_VERBOSE_VERDICTS=true` (Lite: `--verbose-verdicts`) — the
+deny then carries a per-detector `detail()` breakdown, and the SDK renders
+it to stderr when you set `devMode(true)`:
+
+```java
+var opts = ClavenarOptions.builder("https://clavenar.internal")
+    .devMode(true) // dev/staging only — detailed denials are an attacker oracle
+    .build();
+// On a deny, the SDK prints a panel to stderr:
+//   ━━ clavenar denied: send_email ━━
+//     layer=brain  intent=Exfiltration  correlation=abc-123
+//     detectors:
+//       persona_drift         0.12
+//       injection             0.91  ⚠ flagged
+//     degraded: injection
+```
+
+Programmatic access (no `devMode` needed):
+
+```java
+catch (ClavenarDenied e) {
+  if (e.detail() != null) {
+    e.detail().detectors().stream()
+        .filter(d -> d.flagged() || d.score() >= 0.5)
+        .forEach(d -> System.out.println("fired: " + d.detector()));
+  }
+}
+```
+
+`detail()` is null unless the gateway opts in; without it the panel prints
+a hint to enable verbose verdicts.
+
 ## Enforce vs observe
 
 ```java

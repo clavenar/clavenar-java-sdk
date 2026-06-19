@@ -157,7 +157,32 @@ final class Transport {
         stringList(root.get("reasons")),
         stringList(root.get("review_reasons")),
         intent,
-        layer);
+        layer,
+        parseVerdictDetail(root.get("detail")));
+  }
+
+  /**
+   * Parse the optional verbose-verdict {@code detail} block. Lenient — a missing or malformed block
+   * yields null (the gateway omits it unless CLAVENAR_PROXY_VERBOSE_VERDICTS=true).
+   */
+  private static VerdictDetail parseVerdictDetail(JsonNode node) {
+    if (node == null || !node.isObject() || !node.path("detectors").isArray()) {
+      return null;
+    }
+    java.util.List<VerdictDetail.DetectorScore> detectors = new java.util.ArrayList<>();
+    for (JsonNode d : node.get("detectors")) {
+      if (!d.isObject() || !d.path("detector").isTextual() || !d.path("score").isNumber()) {
+        continue;
+      }
+      detectors.add(
+          new VerdictDetail.DetectorScore(
+              d.get("detector").asText(),
+              d.get("score").asDouble(),
+              d.path("flagged").asBoolean(false)));
+    }
+    java.util.List<String> degraded =
+        node.path("degraded").isArray() ? stringList(node.get("degraded")) : java.util.List.of();
+    return new VerdictDetail(detectors, degraded);
   }
 
   private static Verdict parsePending(String body, String corr) {

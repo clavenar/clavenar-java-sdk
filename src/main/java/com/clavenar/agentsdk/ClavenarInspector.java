@@ -88,13 +88,19 @@ public final class ClavenarInspector {
       }
       switch (out.verdict.kind()) {
         case DENY:
-          throw new ClavenarDenied(
-              call.name(),
-              out.verdict.reasons(),
-              out.verdict.reviewReasons(),
-              out.verdict.intentCategory(),
-              out.verdict.layer(),
-              out.verdict.correlationId());
+          ClavenarDenied denied =
+              new ClavenarDenied(
+                  call.name(),
+                  out.verdict.reasons(),
+                  out.verdict.reviewReasons(),
+                  out.verdict.intentCategory(),
+                  out.verdict.layer(),
+                  out.verdict.correlationId(),
+                  out.verdict.detail());
+          if (opts.devMode()) {
+            DevMode.emitDenyPanel(denied);
+          }
+          throw denied;
         case PENDING:
           String corr = out.verdict.correlationId();
           throw new ClavenarPending(

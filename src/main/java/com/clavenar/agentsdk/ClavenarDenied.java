@@ -10,6 +10,7 @@ public final class ClavenarDenied extends ClavenarException {
   private final String intentCategory;
   private final String layer;
   private final String correlationId;
+  private final VerdictDetail detail;
 
   ClavenarDenied(
       String toolName,
@@ -18,6 +19,17 @@ public final class ClavenarDenied extends ClavenarException {
       String intentCategory,
       String layer,
       String correlationId) {
+    this(toolName, reasons, reviewReasons, intentCategory, layer, correlationId, null);
+  }
+
+  ClavenarDenied(
+      String toolName,
+      List<String> reasons,
+      List<String> reviewReasons,
+      String intentCategory,
+      String layer,
+      String correlationId,
+      VerdictDetail detail) {
     super("clavenar denied tool \"" + toolName + "\": " + String.join(" | ", reasons));
     this.toolName = toolName;
     this.reasons = List.copyOf(reasons);
@@ -25,6 +37,7 @@ public final class ClavenarDenied extends ClavenarException {
     this.intentCategory = intentCategory == null ? "" : intentCategory;
     this.layer = layer;
     this.correlationId = correlationId;
+    this.detail = detail;
   }
 
   public String toolName() {
@@ -51,5 +64,10 @@ public final class ClavenarDenied extends ClavenarException {
   /** clavenar's correlation id for the audit ledger when reported, else null. */
   public String correlationId() {
     return correlationId;
+  }
+
+  /** The verbose-verdict per-detector breakdown when the gateway opts in, else null. */
+  public VerdictDetail detail() {
+    return detail;
   }
 }
