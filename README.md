@@ -20,14 +20,14 @@ Maven:
 <dependency>
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.clavenar:agent-sdk:1.0.0")
+implementation("com.clavenar:agent-sdk:1.1.0")
 ```
 
 Requires Java 17+. The only runtime dependency is Jackson; the SDK takes

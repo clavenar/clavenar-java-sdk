@@ -3,6 +3,15 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0]
+
+### Added
+
+- Dev-mode deny rendering: with `devMode(true)`, a `ClavenarDenied`
+  carrying a per-detector `detail()` breakdown (gateway run with
+  `CLAVENAR_PROXY_VERBOSE_VERDICTS=true`) is rendered as a panel to
+  stderr. See "Debugging a denial" in the README.
+
 ## [1.0.0]
 
 Initial release. Java port of the Clavenar agent-wrapper SDK,
