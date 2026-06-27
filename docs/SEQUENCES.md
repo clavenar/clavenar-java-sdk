@@ -27,6 +27,50 @@ decides.
    `ClavenarPending`. Observe mode never throws; a per-call transport
    failure fires `onPolicyError` and is treated as allowed.
 
+## Wrap facade — `Clavenar.wrap`
+
+`Clavenar.wrap(client, opts)` returns a dynamic proxy that inspects the
+model's tool calls inside the unary `create` response; every other method
+passes through unchanged. It calls `opts.validate()`, builds one
+`ClavenarInspector`, then:
+
+1. **Structural provider detection.** `hasNoArgMethod(client, "messages")`
+   → Anthropic (accessor chain `["messages"]`); else
+   `hasNoArgMethod(client, "chat")` → OpenAI (chain
+   `["chat", "completions"]`); else `ClavenarConfigException`. Detection
+   scans `client.getClass().getMethods()` for a zero-arg method of that
+   name — no provider import, pure shape. A `null` client throws
+   `ClavenarConfigException`.
+2. **Accessor-chain Proxy traversal.** `chainProxy` requires the target to
+   implement at least one interface (`getClass().getInterfaces()`; empty →
+   `ClavenarConfigException`, "use `ClavenarInspector` instead"). The
+   `InvocationHandler` walks the chain head-first: a zero-arg call whose
+   name matches the head (`messages` / `chat` / `completions`) invokes the
+   real accessor and returns a fresh proxy over the sub-client carrying the
+   chain tail. Once the chain is empty, a `create` call invokes the real
+   method, trees the result with `Json.MAPPER.valueToTree`, and runs the
+   extractor → `inspector.inspectAll`. Any other method passes straight
+   through.
+3. **`invoke` unwrapping.** `InvocationTargetException` is unwrapped to its
+   cause so the real provider exception — and any (unchecked)
+   `ClavenarException` raised by `inspectAll` — surfaces directly instead of
+   as `UndeclaredThrowableException`.
+4. **Duck-typed extractors.** `extractAnthropic` collects
+   `content[].type=="tool_use"` blocks into `NormalizedToolCall(id, name,
+   input)`. `extractOpenAI` collects `choices[].message.tool_calls[]` of
+   `type=="function"` via `NormalizedToolCall.fromJsonArguments(id,
+   function.name, function.arguments)` (empty string → `{}`, unparseable →
+   `ClavenarConfigException`).
+5. **Fail-open on shape mismatch.** Detection is keyed on accessor shape,
+   not the response. A response that doesn't match the expected provider
+   shape (no `content` / `choices` array) extracts an empty call list;
+   `inspectAll` short-circuits on the empty list and returns, so the
+   `create` clears inspection **silently**. This is the inverse of the
+   fail-**closed** transport posture, where an enforce-mode transport error
+   in `inspectAll` throws (see the **Batch inspect** section above).
+6. **Streaming passthrough.** Only the unary `create` is gated. Streaming
+   responses are not inspected here — gate those with `StreamGate`.
+
 ## Streaming gate — `StreamGate`
 
 Driven from the stream-reading loop:
