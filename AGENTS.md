@@ -1,5 +1,5 @@
 <!-- public repo — do not add internal topology, secrets, deploy/runbook, strategy, or absolute host paths -->
-# clavenar-java-sdk — agent-side wrapper SDK (Maven `com.clavenar:agent-sdk`, Java 17): `ClavenarInspector` + dynamic-proxy `Clavenar.wrap`
+# clavenar-java-sdk — agent-side wrapper SDK (Maven `com.clavenar:agent-sdk`, Java 17)
 
 Inspect the tool calls a model emits against your Clavenar policies *before* your agent runs
 them. Sibling of the TypeScript (`@clavenar/agent-sdk`) and Python (`clavenar-agent-sdk`)
@@ -7,11 +7,17 @@ wrappers — same wire contract. Jackson-only; **no dependency on the Anthropic 
 (it duck-types their response shapes).
 
 ## Build, test, lint
-- Build + test (runs `spotless:check`): `mvn -B verify`
-- Test only: `mvn -B test`
-- Format (google-java-format + removeUnusedImports): `mvn -B spotless:apply`
-- SBOM (CycloneDX → `target/bom.json` / `target/bom.xml`): `mvn -B -DskipTests package`
-- CI (`.github/workflows/ci.yml`) runs `mvn -B verify` on a JDK 17 + 21 matrix, plus the SBOM job.
+
+```bash
+mvn -B verify                # build + test (runs spotless:check)
+mvn -B test                  # test only
+mvn -B spotless:apply        # format (google-java-format + removeUnusedImports)
+mvn -B -DskipTests package   # SBOM (CycloneDX → target/bom.json / target/bom.xml)
+```
+
+CI (`.github/workflows/ci.yml`) runs `mvn -B verify` on a JDK 17 + 21 matrix, plus the SBOM job.
+Examples under `examples/` are a separate Maven reactor (`examples/pom.xml`); root `mvn verify`
+and CI do NOT build them — run `mvn -B -f examples/pom.xml verify` to check example changes.
 
 Run: library, no binary. Public-API entry points: `ClavenarInspector` (`inspect` / `inspectAll`
 / `enforce`), `Clavenar.wrap`, `StreamGate`, `Realtime.inspect`. The SDK is a *client* of a
