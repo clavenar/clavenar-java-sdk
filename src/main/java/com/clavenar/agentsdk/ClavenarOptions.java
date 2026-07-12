@@ -21,6 +21,7 @@ public final class ClavenarOptions {
   private final BiConsumer<Verdict, VerdictContext> onVerdict;
   private final BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
   private final boolean devMode;
+  private final boolean allowUninspectedStream;
 
   private ClavenarOptions(Builder b) {
     this.endpoint = b.endpoint;
@@ -32,6 +33,7 @@ public final class ClavenarOptions {
     this.onVerdict = b.onVerdict;
     this.onPolicyError = b.onPolicyError;
     this.devMode = b.devMode;
+    this.allowUninspectedStream = b.allowUninspectedStream;
   }
 
   public static Builder builder(String endpoint) {
@@ -79,6 +81,14 @@ public final class ClavenarOptions {
     return devMode;
   }
 
+  /**
+   * Let {@link Clavenar#wrap} pass streaming calls through uninspected instead of throwing. Off by
+   * default — the explicit, dangerous opt-out shared with the TypeScript wrapper.
+   */
+  public boolean allowUninspectedStream() {
+    return allowUninspectedStream;
+  }
+
   void validate() {
     if (endpoint == null || endpoint.isEmpty()) {
       throw new ClavenarConfigException("clavenar: endpoint is required");
@@ -108,6 +118,7 @@ public final class ClavenarOptions {
     private BiConsumer<Verdict, VerdictContext> onVerdict;
     private BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
     private boolean devMode;
+    private boolean allowUninspectedStream;
 
     private Builder(String endpoint) {
       this.endpoint = endpoint;
@@ -161,6 +172,15 @@ public final class ClavenarOptions {
      */
     public Builder devMode(boolean devMode) {
       this.devMode = devMode;
+      return this;
+    }
+
+    /**
+     * Let {@link Clavenar#wrap} pass streaming calls through uninspected instead of throwing.
+     * Dangerous: streamed tool calls skip policy entirely — prefer {@link StreamGate}.
+     */
+    public Builder allowUninspectedStream(boolean allowUninspectedStream) {
+      this.allowUninspectedStream = allowUninspectedStream;
       return this;
     }
 

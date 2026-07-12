@@ -1,7 +1,9 @@
 package com.clavenar.agentsdk;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -18,9 +20,15 @@ class WrapTest {
     Object create(Object params);
   }
 
+  interface FakeStreamingMessages extends FakeMessages {
+    Object createStreaming(Object params);
+  }
+
   record FakeBlock(String type, String id, String name, Map<String, Object> input) {}
 
   record FakeMessage(List<FakeBlock> content) {}
+
+  record FakeStoppedMessage(List<FakeBlock> content, String stop_reason) {}
 
   // Fake OpenAI-shaped client.
   interface FakeOpenAI {
@@ -112,5 +120,82 @@ class WrapTest {
     assertThrows(
         ClavenarConfigException.class,
         () -> Clavenar.wrap(stranger, Fixtures.opts("http://127.0.0.1:9")));
+  }
+
+  @Test
+  void wrapBlocksStreamingCreate() {
+    boolean[] invoked = {false};
+    FakeStreamingMessages msgs =
+        new FakeStreamingMessages() {
+          @Override
+          public Object create(Object params) {
+            return new FakeMessage(List.of());
+          }
+
+          @Override
+          public Object createStreaming(Object params) {
+            invoked[0] = true;
+            return new Object();
+          }
+        };
+    FakeAnthropic client = () -> msgs;
+    FakeAnthropic wrapped = Clavenar.wrap(client, Fixtures.opts("http://127.0.0.1:9"));
+    ClavenarConfigException e =
+        assertThrows(
+            ClavenarConfigException.class,
+            () -> ((FakeStreamingMessages) wrapped.messages()).createStreaming(new Object()));
+    assertTrue(e.getMessage().contains("StreamGate"));
+    assertFalse(invoked[0], "streaming call must be blocked before reaching the provider");
+  }
+
+  @Test
+  void wrapAllowsStreamingWithExplicitOptOut() {
+    FakeStreamingMessages msgs =
+        new FakeStreamingMessages() {
+          @Override
+          public Object create(Object params) {
+            return new FakeMessage(List.of());
+          }
+
+          @Override
+          public Object createStreaming(Object params) {
+            return "raw-stream";
+          }
+        };
+    FakeAnthropic client = () -> msgs;
+    ClavenarOptions opts =
+        ClavenarOptions.builder("http://127.0.0.1:9").allowUninspectedStream(true).build();
+    FakeAnthropic wrapped = Clavenar.wrap(client, opts);
+    Object result = ((FakeStreamingMessages) wrapped.messages()).createStreaming(new Object());
+    assertEquals("raw-stream", result);
+  }
+
+  // Provider-shape drift: the turn declares tool use but the blocks aren't extractable. The call
+  // must still pass through (fail-open by contract) while declaresToolUse flags the mismatch.
+  @Test
+  void driftedAnthropicShapePassesThroughButFlagsMismatch() throws Exception {
+    FakeMessages msgs =
+        params ->
+            new FakeStoppedMessage(
+                List.of(new FakeBlock("tool_use_v2", "toolu_1", "delete_user", Map.of())),
+                "tool_use");
+    FakeAnthropic client = () -> msgs;
+    FakeAnthropic wrapped = Clavenar.wrap(client, Fixtures.opts("http://127.0.0.1:9"));
+    Object result = wrapped.messages().create(new Object());
+    assertEquals(FakeStoppedMessage.class, result.getClass());
+    assertTrue(Clavenar.declaresToolUse(Json.MAPPER.valueToTree(result)));
+  }
+
+  @Test
+  void declaresToolUseMatchesProviderStopMarkers() throws Exception {
+    assertTrue(Clavenar.declaresToolUse(Json.MAPPER.readTree("{\"stop_reason\":\"tool_use\"}")));
+    assertTrue(
+        Clavenar.declaresToolUse(
+            Json.MAPPER.readTree("{\"choices\":[{\"finish_reason\":\"tool_calls\"}]}")));
+    assertFalse(Clavenar.declaresToolUse(Json.MAPPER.readTree("{\"stop_reason\":\"end_turn\"}")));
+    assertFalse(
+        Clavenar.declaresToolUse(
+            Json.MAPPER.readTree("{\"choices\":[{\"finish_reason\":\"stop\"}]}")));
+    assertFalse(Clavenar.declaresToolUse(Json.MAPPER.readTree("{}")));
   }
 }

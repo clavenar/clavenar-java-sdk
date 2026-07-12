@@ -18,13 +18,18 @@ import java.util.function.Function;
  * prefer {@link ClavenarInspector} at the tool-dispatch boundary.
  */
 public final class Clavenar {
+  private static final System.Logger LOG = System.getLogger(Clavenar.class.getName());
+  private static final List<String> STREAMING_CREATE_METHODS =
+      List.of("createStreaming", "stream", "createStreamRaw");
+
   private Clavenar() {}
 
   /**
    * Wrap a provider client so every tool call is inspected. Structural detection: a client exposing
    * {@code messages()} is treated as Anthropic, one exposing {@code chat()} as OpenAI. The returned
-   * proxy is assignable back to the same interface type. Streaming responses are not gated here —
-   * use {@link StreamGate} for those.
+   * proxy is assignable back to the same interface type. Streaming calls ({@code createStreaming} /
+   * {@code stream}) cannot be inspected here and throw — use {@link StreamGate}, or opt out with
+   * {@link ClavenarOptions.Builder#allowUninspectedStream}.
    *
    * @throws ClavenarConfigException if the client doesn't expose a recognized create surface, or
    *     isn't interface-based (use {@link ClavenarInspector} instead)
@@ -33,10 +38,11 @@ public final class Clavenar {
     opts.validate();
     ClavenarInspector inspector = new ClavenarInspector(opts);
     if (hasNoArgMethod(client, "messages")) {
-      return chainProxy(client, inspector, List.of("messages"), Clavenar::extractAnthropic);
+      return chainProxy(client, inspector, opts, List.of("messages"), Clavenar::extractAnthropic);
     }
     if (hasNoArgMethod(client, "chat")) {
-      return chainProxy(client, inspector, List.of("chat", "completions"), Clavenar::extractOpenAI);
+      return chainProxy(
+          client, inspector, opts, List.of("chat", "completions"), Clavenar::extractOpenAI);
     }
     throw new ClavenarConfigException(
         "clavenar: Clavenar.wrap requires a client exposing messages().create() (Anthropic) or "
@@ -47,6 +53,7 @@ public final class Clavenar {
   private static <T> T chainProxy(
       T target,
       ClavenarInspector inspector,
+      ClavenarOptions opts,
       List<String> accessorChain,
       Function<JsonNode, List<NormalizedToolCall>> extractor) {
     Class<?>[] interfaces = target.getClass().getInterfaces();
@@ -60,19 +67,53 @@ public final class Clavenar {
           if (accessorChain.isEmpty() && "create".equals(name)) {
             Object result = invoke(target, method, args);
             JsonNode tree = Json.MAPPER.valueToTree(result);
-            inspector.inspectAll(extractor.apply(tree));
+            List<NormalizedToolCall> calls = extractor.apply(tree);
+            if (calls.isEmpty() && declaresToolUse(tree)) {
+              LOG.log(
+                  System.Logger.Level.WARNING,
+                  "clavenar: response declares tool use (stop_reason/finish_reason) but no tool"
+                      + " calls were extracted — the provider response shape may have drifted;"
+                      + " tool calls were NOT inspected");
+            }
+            inspector.inspectAll(calls);
             return result;
+          }
+          if (accessorChain.isEmpty()
+              && STREAMING_CREATE_METHODS.contains(name)
+              && !opts.allowUninspectedStream()) {
+            throw new ClavenarConfigException(
+                "clavenar: "
+                    + name
+                    + "() streams the response and bypasses Clavenar.wrap inspection, so it is"
+                    + " blocked. Gate streamed tool calls with StreamGate, or set"
+                    + " allowUninspectedStream(true) to explicitly accept uninspected streaming.");
           }
           if (!accessorChain.isEmpty()
               && accessorChain.get(0).equals(name)
               && (args == null || args.length == 0)) {
             Object sub = invoke(target, method, args);
             return chainProxy(
-                sub, inspector, accessorChain.subList(1, accessorChain.size()), extractor);
+                sub, inspector, opts, accessorChain.subList(1, accessorChain.size()), extractor);
           }
           return invoke(target, method, args);
         };
     return (T) Proxy.newProxyInstance(target.getClass().getClassLoader(), interfaces, handler);
+  }
+
+  /** True when the provider marked the turn as tool-calling, whatever the content shape. */
+  static boolean declaresToolUse(JsonNode tree) {
+    if ("tool_use".equals(tree.path("stop_reason").asText())) {
+      return true;
+    }
+    JsonNode choices = tree.path("choices");
+    if (choices.isArray()) {
+      for (JsonNode choice : choices) {
+        if ("tool_calls".equals(choice.path("finish_reason").asText())) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private static Object invoke(Object target, Method method, Object[] args) throws Throwable {

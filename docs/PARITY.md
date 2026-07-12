@@ -17,7 +17,8 @@ Python, and Java SDKs:
 | Enforce | first deny → `ClavenarDenied`, pending → `ClavenarPending`; transport error fails closed, `onPolicyError` not called |
 | Observe | nothing blocks; per-call transport failure → `onPolicyError`, treated as allowed |
 | Streaming | closing event held until verdict; empty args → `{}`; unparseable drained args → `ClavenarConfigException` |
-| Wrap extraction | `Clavenar.wrap` duck-types the `create` response: Anthropic `content[].type=="tool_use"`, OpenAI `choices[].message.tool_calls[].type=="function"`; a provider-shape mismatch extracts zero calls and clears inspection silently (**fail-open**), unlike the fail-closed enforce transport path |
+| Wrap extraction | `Clavenar.wrap` duck-types the `create` response: Anthropic `content[].type=="tool_use"`, OpenAI `choices[].message.tool_calls[].type=="function"`; a provider-shape mismatch extracts zero calls and clears inspection (**fail-open**), unlike the fail-closed enforce transport path — but a turn whose `stop_reason`/`finish_reason` declares tool use with zero extracted calls logs a `System.Logger` WARNING (shape-drift signal) |
+| Wrap streaming | `createStreaming()` / `stream()` through the wrap proxy throw `ClavenarConfigException` (uninspectable — mirrors TS blocking the `.stream()` helpers); `allowUninspectedStream(true)` is the explicit opt-out, `StreamGate` the inspected path |
 | Resolve | poll `GET /pending/{id}` every 2s, ceiling 10m; deny → `ClavenarDenied` (`intentCategory="PendingDenied"`, reason = decider note or `"operator denied"`); 401/404 terminal; 5xx/network swallowed |
 | OpenAI non-streaming, unparseable args | `ClavenarConfigException` (matches TS, not Python's raw-string fallback) |
 | Realtime | `arguments` forwarded as a raw JSON string on parse failure |

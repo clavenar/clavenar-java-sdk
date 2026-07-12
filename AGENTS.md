@@ -31,9 +31,10 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
 - `ClavenarInspector.java` — primary surface. Gate a tool at the dispatch boundary (Spring AI /
   LangChain4j): `inspect` returns a `Verdict`; `enforce` throws in enforce mode.
 - `Clavenar.java` — `wrap` wrap-and-forget facade. Returns a dynamic `Proxy` over a provider
-  client; structural detection (`messages()` → Anthropic, `chat()` → OpenAI); intercepts only
-  `create()`, passes every other method through. `extractAnthropic` / `extractOpenAI` duck-type
-  tool calls out of the response tree.
+  client; structural detection (`messages()` → Anthropic, `chat()` → OpenAI); inspects
+  `create()`, throws on streaming calls (`createStreaming()` / `stream()`), passes every other
+  method through. `extractAnthropic` / `extractOpenAI` duck-type tool calls out of the response
+  tree.
 - `Transport.java` — HTTP: `POST /mcp` inspection (with retry), `GET /pending/{id}` polling.
 - `StreamGate.java` — holds a tool call's closing event until a verdict returns (`start` /
   `update` / `close` for Anthropic block index, `closeByPrefix` for OpenAI per-choice drain).
@@ -56,13 +57,16 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
   nothing throws — verdicts surface via `onVerdict`, transport errors via `onPolicyError`.
 - **Fail-closed.** In enforce mode a transport failure to reach the gateway throws
   `ClavenarTransportException` rather than silently allowing the call.
-- **`Clavenar.wrap` does NOT gate streaming.** It intercepts only the non-streaming `create()`;
-  streamed responses pass through **uninspected** — gate those with `StreamGate`. (The TS/Python
-  wrappers throw on a streaming call; Java currently passes it through, so this is easy to miss.)
+- **`Clavenar.wrap` blocks streaming calls.** It inspects the non-streaming `create()`; a
+  `createStreaming()` / `stream()` call through the proxy throws `ClavenarConfigException`
+  (matching the TS/Python wrappers) — gate streamed tool calls with `StreamGate`, or set
+  `allowUninspectedStream(true)` for the explicit, dangerous opt-out.
 - **Duck-typed extraction can silently return zero calls.** `extractAnthropic` / `extractOpenAI`
   read provider response shapes structurally; a shape mismatch (provider-SDK change, unexpected
-  JSON) yields an empty list, so the call clears inspection by default. Treat a provider upgrade
-  as a parity risk and cover it with a fixture.
+  JSON) yields an empty list, so the call clears inspection by default. A turn whose
+  `stop_reason` / `finish_reason` declares tool use but extracts zero calls logs a
+  `System.Logger` WARNING (shape-drift signal). Treat a provider upgrade as a parity risk and
+  cover it with a fixture.
 - **`wrap` needs an interface-based client** — it builds a `java.lang.reflect.Proxy` over the
   client's interfaces; a non-interface client throws `ClavenarConfigException`. Use
   `ClavenarInspector` directly in that case.

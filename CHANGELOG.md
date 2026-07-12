@@ -3,6 +3,25 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `Clavenar.wrap` now throws `ClavenarConfigException` on streaming
+  calls (`createStreaming()` / `stream()`) instead of silently passing
+  them through uninspected, matching the TypeScript and Python
+  wrappers. Gate streamed tool calls with `StreamGate`, or set the new
+  `ClavenarOptions.builder(...).allowUninspectedStream(true)` for the
+  explicit opt-out.
+
+### Added
+
+- Shape-drift signal: a `create` response whose `stop_reason` /
+  `finish_reason` declares tool use but from which zero tool calls
+  were extracted logs a `System.Logger` WARNING — extraction stays
+  fail-open for text-only turns, but silent provider-shape drift is
+  now visible.
+
 ## [1.1.0]
 
 ### Added
