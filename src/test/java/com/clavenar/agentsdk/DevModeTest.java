@@ -28,7 +28,12 @@ class DevModeTest {
     String p = DevMode.renderDenyPanel(d);
     for (String want :
         List.of(
-            "send_email", "layer=brain", "correlation=abc-123", "injection", "0.91", "⚠ flagged",
+            "send_email",
+            "layer=brain",
+            "correlation=abc-123",
+            "injection",
+            "0.91",
+            "⚠ flagged",
             "degraded: injection")) {
       assertTrue(p.contains(want), "panel missing '" + want + "':\n" + p);
     }
