@@ -74,13 +74,15 @@ through unchanged.
 ## Verdicts and the error model
 
 `ClavenarInspector.inspect` returns a `Verdict` (`ALLOW` / `DENY` /
-`PENDING`). `inspectAll`, `enforce`, and the wrap facade translate, in
-enforce mode, to unchecked exceptions rooted at `ClavenarException`:
+`PENDING` / `RATE_LIMITED`). `inspectAll`, `enforce`, and the wrap facade
+translate, in enforce mode, to unchecked exceptions rooted at
+`ClavenarException`:
 
 | Exception | Meaning |
 |---|---|
 | `ClavenarDenied` | policy rejected the call — `toolName`, `reasons`, `reviewReasons`, `intentCategory`, `layer`, `correlationId` |
 | `ClavenarPending` | parked for human review — call `resolve()` to block until decided |
+| `ClavenarRateLimited` | 429 before evaluation — `code()` (`rate_limited` velocity gate / `quota_exceeded` spend gate), `retryAfterSecs()`; never auto-retried |
 | `ClavenarTransportException` | clavenar unreachable / unexpected response — `status()` (0 = network) |
 | `ClavenarConfigException` | bad options, or a model tool call with unparseable arguments |
 

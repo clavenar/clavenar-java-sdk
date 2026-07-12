@@ -77,6 +77,8 @@ final class Transport {
         return parseDeny(resp.body(), corr);
       case 202:
         return parsePending(resp.body(), corr);
+      case 429:
+        return parseRateLimit(resp.body(), corr);
       default:
         String text = resp.body() == null ? "" : resp.body().strip();
         String msg = "clavenar inspect: unexpected status " + status;
@@ -209,6 +211,37 @@ final class Transport {
     }
     return new Verdict(
         VerdictKind.PENDING, id, null, stringList(root.get("review_reasons")), null, null);
+  }
+
+  /**
+   * Parse the 429 envelope. Lenient like the deny parser: only the string {@code error} code is
+   * required; the verdict falls back to {@code rate_limited} when the body omits it (both codes
+   * ride HTTP 429). A 429 is a verdict, not a transient failure — it is never retried.
+   */
+  private static Verdict parseRateLimit(String body, String corr) {
+    JsonNode root;
+    try {
+      root = Json.MAPPER.readTree(body);
+    } catch (Exception e) {
+      throw new ClavenarTransportException(
+          "clavenar 429 with unparseable body: " + e.getMessage(), 429);
+    }
+    if (root == null || !root.isObject() || !root.path("error").isTextual()) {
+      throw new ClavenarTransportException("clavenar 429 with unexpected body shape: " + body, 429);
+    }
+    JsonNode verdict = root.path("verdict");
+    String code =
+        verdict.isTextual() && "quota_exceeded".equals(verdict.asText())
+            ? "quota_exceeded"
+            : "rate_limited";
+    Integer retryAfterSecs =
+        root.path("retry_after_secs").isNumber() ? root.get("retry_after_secs").intValue() : null;
+    String layer = root.path("layer").isTextual() ? root.get("layer").asText() : null;
+    String id = corr;
+    if ((id == null || id.isEmpty()) && root.path("correlation_id").isTextual()) {
+      id = root.get("correlation_id").asText();
+    }
+    return Verdict.rateLimited(id, code, stringList(root.get("reasons")), retryAfterSecs, layer);
   }
 
   private static List<String> stringList(JsonNode node) {

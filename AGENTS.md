@@ -41,10 +41,10 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
 - `Realtime.java` — single function-call inspection (`Realtime.inspect`).
 - `ClavenarOptions.java` — builder: endpoint (required), `token`, `observe()` vs enforce,
   `devMode`, retry/timeout, `onVerdict` / `onPolicyError` callbacks.
-- `Verdict` / `VerdictKind` (`ALLOW`/`DENY`/`PENDING`) / `VerdictContext` / `VerdictDetail` —
-  result + per-detector breakdown.
-- `ClavenarException` family — `ClavenarDenied`, `ClavenarPending`, `ClavenarTransportException`,
-  `ClavenarConfigException`.
+- `Verdict` / `VerdictKind` (`ALLOW`/`DENY`/`PENDING`/`RATE_LIMITED`) / `VerdictContext` /
+  `VerdictDetail` — result + per-detector breakdown.
+- `ClavenarException` family — `ClavenarDenied`, `ClavenarPending`, `ClavenarRateLimited`,
+  `ClavenarTransportException`, `ClavenarConfigException`.
 - `NormalizedToolCall.java` — the normalized `(id, name, args)` shape extraction produces.
 - `Json.java` (shared Jackson `MAPPER`), `Mode`, `DevMode`, `ResolveOptions`, `RetryOptions`,
   `ClavenarPendingView`.

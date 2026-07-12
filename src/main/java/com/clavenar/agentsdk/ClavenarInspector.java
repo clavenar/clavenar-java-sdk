@@ -36,9 +36,10 @@ public final class ClavenarInspector {
 
   /**
    * Inspect a batch concurrently and, in enforce mode, throw the first {@link ClavenarDenied} /
-   * {@link ClavenarPending} in submission order — not wire order. {@code onVerdict} fires per call
-   * before any deny→throw. In observe mode nothing blocks: deny passes through and a per-call
-   * transport failure fires {@code onPolicyError} and is treated as allowed.
+   * {@link ClavenarPending} / {@link ClavenarRateLimited} in submission order — not wire order.
+   * {@code onVerdict} fires per call before any deny→throw. In observe mode nothing blocks: deny
+   * passes through and a per-call transport failure fires {@code onPolicyError} and is treated as
+   * allowed.
    */
   public void inspectAll(List<NormalizedToolCall> calls) {
     if (calls == null || calls.isEmpty()) {
@@ -108,6 +109,14 @@ public final class ClavenarInspector {
               corr,
               out.verdict.reviewReasons(),
               () -> Transport.pollPendingOnce(corr, opts));
+        case RATE_LIMITED:
+          throw new ClavenarRateLimited(
+              call.name(),
+              out.verdict.rateLimitCode(),
+              out.verdict.reasons(),
+              out.verdict.retryAfterSecs(),
+              out.verdict.layer(),
+              out.verdict.correlationId());
         default:
           break;
       }

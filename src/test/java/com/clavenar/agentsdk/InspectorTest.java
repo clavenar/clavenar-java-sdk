@@ -96,6 +96,47 @@ class InspectorTest {
   }
 
   @Test
+  void rateLimitedEnforce() throws Exception {
+    String body =
+        """
+        {"verdict":"rate_limited","layer":"proxy","error":"rate_limited","reasons":["agent request velocity exceeded"],"retry_after_secs":30}""";
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(429, body).corr("c-429"))) {
+      ClavenarRateLimited e =
+          assertThrows(
+              ClavenarRateLimited.class,
+              () ->
+                  new ClavenarInspector(Fixtures.opts(srv.baseUrl))
+                      .inspectAll(List.of(Fixtures.sampleCall())));
+      assertEquals("delete_user", e.toolName());
+      assertEquals("rate_limited", e.code());
+      assertEquals(List.of("agent request velocity exceeded"), e.reasons());
+      assertEquals(Integer.valueOf(30), e.retryAfterSecs());
+      assertEquals("proxy", e.layer());
+      assertEquals("c-429", e.correlationId());
+      assertTrue(e.getMessage().contains("(retry after 30s)"));
+    }
+  }
+
+  @Test
+  void observePassesThroughRateLimited() throws Exception {
+    List<VerdictKind> kinds = new ArrayList<>();
+    String body =
+        """
+        {"verdict":"rate_limited","error":"rate_limited","reasons":[],"retry_after_secs":5}""";
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(429, body))) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .observe()
+              .retry(new RetryOptions(1, Duration.ofMillis(1)))
+              .onVerdict((v, ctx) -> kinds.add(v.kind()))
+              .build();
+      new ClavenarInspector(opts).inspectAll(List.of(Fixtures.sampleCall()));
+      assertEquals(List.of(VerdictKind.RATE_LIMITED), kinds);
+    }
+  }
+
+  @Test
   void pendingEnforce() throws Exception {
     String body =
         "{\"status\":\"pending\",\"correlation_id\":\"cp\",\"review_reasons\":[\"needs review\"]}";

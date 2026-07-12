@@ -66,6 +66,57 @@ class TransportTest {
   }
 
   @Test
+  void rateLimitedWithRetryAfter() throws Exception {
+    AtomicInteger n = new AtomicInteger();
+    String body =
+        """
+        {"verdict":"rate_limited","layer":"proxy","error":"rate_limited","reasons":["agent request velocity exceeded"],"correlation_id":"c-429","retry_after_secs":17}""";
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> {
+              n.incrementAndGet();
+              return TestServer.Response.of(429, body);
+            })) {
+      ClavenarOptions opts =
+          ClavenarOptions.builder(srv.baseUrl)
+              .retry(new RetryOptions(3, Duration.ofMillis(1)))
+              .build();
+      Verdict v = inspect(opts);
+      assertEquals(VerdictKind.RATE_LIMITED, v.kind());
+      assertEquals("rate_limited", v.rateLimitCode());
+      assertEquals(Integer.valueOf(17), v.retryAfterSecs());
+      assertEquals("proxy", v.layer());
+      assertEquals(java.util.List.of("agent request velocity exceeded"), v.reasons());
+      assertEquals("c-429", v.correlationId());
+      // A 429 is a verdict, not a transient failure — exactly one attempt.
+      assertEquals(1, n.get());
+    }
+  }
+
+  @Test
+  void quotaExceededWithoutRetryAfter() throws Exception {
+    String body =
+        """
+        {"verdict":"quota_exceeded","layer":"proxy","error":"quota_exceeded","reasons":["tenant monthly spend cap reached"]}""";
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(429, body))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals(VerdictKind.RATE_LIMITED, v.kind());
+      assertEquals("quota_exceeded", v.rateLimitCode());
+      assertNull(v.retryAfterSecs());
+    }
+  }
+
+  @Test
+  void rateLimitBadShapeIsTransport() throws Exception {
+    try (TestServer srv =
+        new TestServer((m, p, b, h) -> TestServer.Response.of(429, "{\"wrong\":\"shape\"}"))) {
+      ClavenarTransportException e =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(429, e.status());
+    }
+  }
+
+  @Test
   void pendingHeaderWins() throws Exception {
     String body = "{\"status\":\"pending\",\"correlation_id\":\"cb\",\"review_reasons\":[\"x\"]}";
     try (TestServer srv =

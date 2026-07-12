@@ -4,5 +4,6 @@ package com.clavenar.agentsdk;
 public enum VerdictKind {
   ALLOW,
   DENY,
-  PENDING
+  PENDING,
+  RATE_LIMITED
 }

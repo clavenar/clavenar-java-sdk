@@ -16,6 +16,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- 429 rate-limit verdicts: the transport now parses the spec's
+  `rate_limited` / `quota_exceeded` envelope instead of collapsing a
+  429 into a generic `ClavenarTransportException`. Enforce mode throws
+  the new `ClavenarRateLimited` (carrying `code()`, `retryAfterSecs()`,
+  `reasons()`, `layer()`, `correlationId()`); observe mode surfaces the
+  new `VerdictKind.RATE_LIMITED` verdict via `onVerdict` and passes the
+  call through. 429s are never auto-retried — honor `retryAfterSecs()`
+  in the caller.
 - Shape-drift signal: a `create` response whose `stop_reason` /
   `finish_reason` declares tool use but from which zero tool calls
   were extracted logs a `System.Logger` WARNING — extraction stays

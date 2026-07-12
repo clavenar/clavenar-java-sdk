@@ -12,9 +12,10 @@ Python, and Java SDKs:
 | 200 | allow; `X-Clavenar-Correlation-Id` surfaced when present |
 | 403 | deny; missing `reasons`/`review_reasons` → empty, missing `intent_category` → `""`; non-string `error` → transport error |
 | 202 | pending; `correlationId = header ?? body`, both empty → transport error |
-| Retry | network + 5xx retry up to `maxAttempts` (default 3); full-jitter backoff `base*2^attempt*(0.5+rand*0.5)`, base 100ms; 200/403/other-4xx never retry; timeout 10s |
+| 429 | rate-limit verdict, never retried (exactly one attempt); lenient parse: string `error` required (else transport error with status 429), `verdict` falls back to `rate_limited` unless exactly `quota_exceeded`, missing `reasons` → empty, `retry_after_secs` optional (absent on `quota_exceeded`); `correlationId = header ?? body` |
+| Retry | network + 5xx retry up to `maxAttempts` (default 3); full-jitter backoff `base*2^attempt*(0.5+rand*0.5)`, base 100ms; 200/403/429/other-4xx never retry; timeout 10s |
 | Inspect-all | concurrent inspect, **submission-order** first-deny; `onVerdict` before any deny→throw |
-| Enforce | first deny → `ClavenarDenied`, pending → `ClavenarPending`; transport error fails closed, `onPolicyError` not called |
+| Enforce | first deny → `ClavenarDenied`, pending → `ClavenarPending`, rate limit → `ClavenarRateLimited`; transport error fails closed, `onPolicyError` not called |
 | Observe | nothing blocks; per-call transport failure → `onPolicyError`, treated as allowed |
 | Streaming | closing event held until verdict; empty args → `{}`; unparseable drained args → `ClavenarConfigException` |
 | Wrap extraction | `Clavenar.wrap` duck-types the `create` response: Anthropic `content[].type=="tool_use"`, OpenAI `choices[].message.tool_calls[].type=="function"`; a provider-shape mismatch extracts zero calls and clears inspection (**fail-open**), unlike the fail-closed enforce transport path — but a turn whose `stop_reason`/`finish_reason` declares tool use with zero extracted calls logs a `System.Logger` WARNING (shape-drift signal) |
@@ -28,7 +29,7 @@ Python, and Java SDKs:
 
 None change wire bytes or verdict outcomes:
 
-1. **`ClavenarException` base class.** TS/Python root their four errors at
+1. **`ClavenarException` base class.** TS/Python root their errors at
    the language base with no shared parent. Java adds a `ClavenarException`
    root so callers can `catch (ClavenarException e)` at a tool boundary —
    each concrete type keeps the same name and fields. The exceptions are
