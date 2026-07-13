@@ -87,6 +87,7 @@ Java coding standards (this stack):
 - Anything in a `public` method/field signature must itself be `public` (no leaking
   package-private types through the public API).
 - Tests are JUnit 5 (`org.junit.jupiter`) under `src/test/java`.
+- Commit subjects must start with a lowercase letter.
 
 ## Pointers
 README.md · SECURITY.md · docs/SEQUENCES.md (StreamGate event ordering) · docs/PARITY.md
