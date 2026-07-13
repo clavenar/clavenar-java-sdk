@@ -51,6 +51,7 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
 - Tests in `src/test/java/...` (JUnit 5); `TestServer` / `Fixtures` back the transport tests.
 
 ## Conventions & invariants
+- After adding or updating a feature, also update the relevant `MANUAL_TESTS*` file(s) when needed.
 - **Inspection-before-execution is the contract.** A call must be inspected and clear policy
   *before* the tool runs. In enforce mode a block throws (`ClavenarDenied`) and a parked call
   throws `ClavenarPending` (call `resolve()` to wait for the human decision); in observe mode
