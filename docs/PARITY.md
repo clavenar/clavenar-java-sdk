@@ -14,7 +14,7 @@ Python, and Java SDKs:
 | 202 | pending; `correlationId = header ?? body`, both empty → transport error |
 | 429 | rate-limit verdict, never retried (exactly one attempt); lenient parse: string `error` required (else transport error with status 429), `verdict` falls back to `rate_limited` unless exactly `quota_exceeded`, missing `reasons` → empty, `retry_after_secs` optional (absent on `quota_exceeded`); `correlationId = header ?? body` |
 | Retry | network + 5xx retry up to `maxAttempts` (default 3); full-jitter backoff `base*2^attempt*(0.5+rand*0.5)`, base 100ms; 200/403/429/other-4xx never retry; timeout 10s |
-| Inspect-all | concurrent inspect, **submission-order** first-deny; `onVerdict` before any deny→throw |
+| Inspect-all | one ordered atomic decision, **submission-order** first-deny; `onVerdict` before any deny→throw |
 | Enforce | first deny → `ClavenarDenied`, pending → `ClavenarPending`, rate limit → `ClavenarRateLimited`; transport error fails closed, `onPolicyError` not called |
 | Observe | nothing blocks; per-call transport failure → `onPolicyError`, treated as allowed |
 | Streaming | closing event held until verdict; empty args → `{}`; unparseable drained args → `ClavenarConfigException` |

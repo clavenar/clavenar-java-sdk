@@ -6,7 +6,7 @@
 
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <packaging>jar</packaging>
 
   <name>clavenar-agent-sdk</name>
@@ -56,6 +56,15 @@
   </dependencies>
 
   <build>
+    <resources>
+      <resource>
+        <directory>fixtures</directory>
+        <targetPath>fixtures</targetPath>
+        <includes>
+          <include>sdk-cross-language-v1.fixture.json</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

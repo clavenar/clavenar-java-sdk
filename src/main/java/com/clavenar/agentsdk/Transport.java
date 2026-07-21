@@ -12,15 +12,57 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Wire transport: POST /mcp inspection with retry, and GET /pending/{id} polling. */
 final class Transport {
   private static final String CORRELATION_HEADER = "X-Clavenar-Correlation-Id";
+  static final String DECISION_CONTRACT = "clavenar.decision/v1";
+  static final String DECISION_CONTRACT_HEADER = "X-Clavenar-Decision-Contract";
+  static final String IDEMPOTENCY_ID_HEADER = "X-Clavenar-Idempotency-Id";
 
   private Transport() {}
 
   static Verdict inspect(NormalizedToolCall call, ClavenarOptions o) {
+    String idempotencyId = UUID.randomUUID().toString();
+    ObjectNode root = toolRequest(call.name(), call.input(), idempotencyId);
+    return inspectDecision(root, idempotencyId, o);
+  }
+
+  static Verdict inspectBatch(List<NormalizedToolCall> calls, ClavenarOptions o) {
+    if (calls == null || calls.isEmpty() || calls.size() > 128) {
+      throw new ClavenarConfigException("atomic decision batch must contain 1..128 calls");
+    }
+    java.util.HashSet<String> ids = new java.util.HashSet<>();
+    String idempotencyId = UUID.randomUUID().toString();
+    ObjectNode root = Json.MAPPER.createObjectNode();
+    root.put("jsonrpc", "2.0");
+    root.put("id", idempotencyId);
+    root.put("method", "clavenar/tools.batch");
+    ObjectNode params = root.putObject("params");
+    params.put("name", "clavenar.atomic-batch");
+    ObjectNode arguments = params.putObject("arguments");
+    arguments.put("contract", "clavenar.atomic-tool-call-batch/v1");
+    com.fasterxml.jackson.databind.node.ArrayNode encodedCalls = arguments.putArray("calls");
+    for (NormalizedToolCall call : calls) {
+      if (call.id() == null
+          || call.id().isEmpty()
+          || call.name() == null
+          || call.name().isEmpty()
+          || !ids.add(call.id())) {
+        throw new ClavenarConfigException(
+            "atomic decision calls require unique non-empty ids and names");
+      }
+      ObjectNode encoded = encodedCalls.addObject();
+      encoded.put("id", call.id());
+      encoded.put("name", call.name());
+      encoded.set("arguments", call.input());
+    }
+    return inspectDecision(root, idempotencyId, o);
+  }
+
+  private static Verdict inspectDecision(ObjectNode body, String idempotencyId, ClavenarOptions o) {
     RetryOptions r = o.retry();
     if (r.maxAttempts() < 1) {
       throw new ClavenarTransportException(
@@ -29,7 +71,7 @@ final class Transport {
     ClavenarTransportException last = null;
     for (int attempt = 0; attempt < r.maxAttempts(); attempt++) {
       try {
-        return inspectOnce(call, o);
+        return inspectOnce(body, idempotencyId, o);
       } catch (ClavenarTransportException e) {
         last = e;
         if (!isRetriable(e) || attempt == r.maxAttempts() - 1) {
@@ -41,32 +83,10 @@ final class Transport {
     throw last; // unreachable: the loop returns or throws on the final attempt.
   }
 
-  private static Verdict inspectOnce(NormalizedToolCall call, ClavenarOptions o) {
-    ObjectNode root = Json.MAPPER.createObjectNode();
-    root.put("jsonrpc", "2.0");
-    root.put("method", "tools/call");
-    ObjectNode params = root.putObject("params");
-    params.put("name", call.name());
-    params.set("arguments", call.input());
-    root.put("id", call.id());
+  private static Verdict inspectOnce(ObjectNode root, String idempotencyId, ClavenarOptions o) {
+    String body = encode(root, "inspect");
 
-    String body;
-    try {
-      body = Json.MAPPER.writeValueAsString(root);
-    } catch (Exception e) {
-      throw new ClavenarTransportException(
-          "clavenar inspect: failed to encode request: " + e.getMessage());
-    }
-
-    HttpRequest.Builder rb =
-        HttpRequest.newBuilder(URI.create(joinUrl(o.endpoint(), "/mcp")))
-            .timeout(o.timeout())
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body));
-    if (o.token() != null && !o.token().isEmpty()) {
-      rb.header("Authorization", "Bearer " + o.token());
-    }
-
+    HttpRequest.Builder rb = decisionRequest(body, idempotencyId, o);
     HttpResponse<String> resp = send(o.httpClient(), rb.build(), o.timeout(), "inspect");
     String corr = resp.headers().firstValue(CORRELATION_HEADER).orElse(null);
     int status = resp.statusCode();
@@ -87,6 +107,92 @@ final class Transport {
         }
         throw new ClavenarTransportException(msg, status);
     }
+  }
+
+  static JsonNode authorize(ObjectNode body, String idempotencyId, ClavenarOptions o) {
+    RetryOptions retry = o.retry();
+    ClavenarTransportException last = null;
+    String encoded = encode(body, "authorization");
+    for (int attempt = 0; attempt < retry.maxAttempts(); attempt++) {
+      HttpResponse<String> response;
+      try {
+        response =
+            send(
+                o.httpClient(),
+                decisionRequest(encoded, idempotencyId, o).build(),
+                o.timeout(),
+                "authorization");
+      } catch (ClavenarTransportException error) {
+        last = error;
+        if (!isRetriable(error) || attempt == retry.maxAttempts() - 1) {
+          throw error;
+        }
+        sleep(backoffMillis(retry.baseDelay(), attempt));
+        continue;
+      }
+      if (response.statusCode() == 200) {
+        try {
+          JsonNode parsed = Json.MAPPER.readTree(response.body());
+          if (parsed == null || !parsed.isObject()) {
+            throw new ClavenarTransportException(
+                "clavenar authorization returned a non-object", 200);
+          }
+          return parsed;
+        } catch (ClavenarTransportException e) {
+          throw e;
+        } catch (Exception e) {
+          throw new ClavenarTransportException(
+              "clavenar authorization returned invalid JSON: " + e.getMessage(), 200);
+        }
+      }
+      String text = response.body() == null ? "" : response.body().strip();
+      last =
+          new ClavenarTransportException(
+              "clavenar authorization: unexpected status "
+                  + response.statusCode()
+                  + (text.isEmpty() ? "" : ": " + text),
+              response.statusCode());
+      if (!isRetriable(last) || attempt == retry.maxAttempts() - 1) {
+        throw last;
+      }
+      sleep(backoffMillis(retry.baseDelay(), attempt));
+    }
+    throw last;
+  }
+
+  static ObjectNode toolRequest(String name, JsonNode input, String idempotencyId) {
+    ObjectNode root = Json.MAPPER.createObjectNode();
+    root.put("jsonrpc", "2.0");
+    root.put("method", "tools/call");
+    ObjectNode params = root.putObject("params");
+    params.put("name", name);
+    params.set("arguments", input);
+    root.put("id", idempotencyId);
+    return root;
+  }
+
+  private static String encode(JsonNode body, String operation) {
+    try {
+      return Json.MAPPER.writeValueAsString(body);
+    } catch (Exception e) {
+      throw new ClavenarTransportException(
+          "clavenar " + operation + ": failed to encode request: " + e.getMessage());
+    }
+  }
+
+  private static HttpRequest.Builder decisionRequest(
+      String body, String idempotencyId, ClavenarOptions o) {
+    HttpRequest.Builder builder =
+        HttpRequest.newBuilder(URI.create(joinUrl(o.endpoint(), "/mcp")))
+            .timeout(o.timeout())
+            .header("Content-Type", "application/json")
+            .header(DECISION_CONTRACT_HEADER, DECISION_CONTRACT)
+            .header(IDEMPOTENCY_ID_HEADER, idempotencyId)
+            .POST(HttpRequest.BodyPublishers.ofString(body));
+    if (o.token() != null && !o.token().isEmpty()) {
+      builder.header("Authorization", "Bearer " + o.token());
+    }
+    return builder;
   }
 
   static ClavenarPendingView pollPendingOnce(String correlationId, ClavenarOptions o) {

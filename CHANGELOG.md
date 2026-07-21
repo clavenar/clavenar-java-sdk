@@ -5,6 +5,22 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-21
+
+### Added
+
+- `GovernedExecutionClient` with serializable prepared requests, a registered
+  executor, durable intent/completion store, workload receipt signer, and
+  actual provider-result return.
+- The shared `clavenar.sdk-cross-language/v1` conformance fixture, packaged in
+  the Maven artifact.
+
+### Changed
+
+- Inspection explicitly selects `clavenar.decision/v1` with a UUID allocated
+  before the first attempt and retained across safe retries. Multi-tool turns
+  use one ordered atomic decision.
+
 ### Changed
 
 - `Clavenar.wrap` now throws `ClavenarConfigException` on streaming

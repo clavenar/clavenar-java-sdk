@@ -1,5 +1,6 @@
 package com.clavenar.agentsdk;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -244,6 +245,8 @@ class TransportTest {
     AtomicReference<String> gotAuth = new AtomicReference<>();
     AtomicReference<String> gotCt = new AtomicReference<>();
     AtomicReference<String> gotPath = new AtomicReference<>();
+    AtomicReference<String> gotDecision = new AtomicReference<>();
+    AtomicReference<String> gotIdempotency = new AtomicReference<>();
     try (TestServer srv =
         new TestServer(
             (m, p, b, h) -> {
@@ -251,6 +254,8 @@ class TransportTest {
               gotPath.set(p);
               gotAuth.set(h.getFirst("Authorization"));
               gotCt.set(h.getFirst("Content-Type"));
+              gotDecision.set(h.getFirst(Transport.DECISION_CONTRACT_HEADER));
+              gotIdempotency.set(h.getFirst(Transport.IDEMPOTENCY_ID_HEADER));
               return TestServer.Response.of(200, null);
             })) {
       ClavenarOptions opts =
@@ -262,10 +267,12 @@ class TransportTest {
       assertEquals("/mcp", gotPath.get());
       assertEquals("application/json", gotCt.get());
       assertEquals("Bearer tok", gotAuth.get());
+      assertEquals(Transport.DECISION_CONTRACT, gotDecision.get());
       JsonNode env = Json.MAPPER.readTree(gotBody.get());
       assertEquals("2.0", env.get("jsonrpc").asText());
       assertEquals("tools/call", env.get("method").asText());
-      assertEquals("toolu_1", env.get("id").asText());
+      assertEquals(gotIdempotency.get(), env.get("id").asText());
+      assertDoesNotThrow(() -> java.util.UUID.fromString(env.get("id").asText()));
       assertEquals("delete_user", env.get("params").get("name").asText());
       assertEquals("alice", env.get("params").get("arguments").get("user").asText());
     }

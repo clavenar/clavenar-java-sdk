@@ -19,13 +19,13 @@ decides.
 
 ## Batch inspect — `ClavenarInspector.inspectAll` / `enforce`
 
-1. Fan out one inspection per call on the common pool, then **await all**.
-2. In enforce mode, any transport error surfaces here (fail closed)
-   before any deny is processed — matching Promise.all semantics.
-3. Process resolved results in **submission order**: `onVerdict` fires per
+1. Allocate one client UUID before network access.
+2. Submit the complete ordered sibling set through
+   `clavenar.atomic-tool-call-batch/v1` as one side-effect-free decision.
+3. Process the batch verdict in **submission order**: `onVerdict` fires per
    call, then the first `DENY` → `ClavenarDenied` / `PENDING` →
-   `ClavenarPending`. Observe mode never throws; a per-call transport
-   failure fires `onPolicyError` and is treated as allowed.
+   `ClavenarPending`. Observe mode never throws; a batch transport failure
+   fires `onPolicyError` for every covered call.
 
 ## Wrap facade — `Clavenar.wrap`
 

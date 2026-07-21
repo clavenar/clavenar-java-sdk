@@ -1,10 +1,8 @@
 package com.clavenar.agentsdk;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 
 /**
  * The primary inspection surface for framework integrations (LangChain4j {@code ToolExecutor},
@@ -35,11 +33,8 @@ public final class ClavenarInspector {
   }
 
   /**
-   * Inspect a batch concurrently and, in enforce mode, throw the first {@link ClavenarDenied} /
-   * {@link ClavenarPending} / {@link ClavenarRateLimited} in submission order — not wire order.
-   * {@code onVerdict} fires per call before any deny→throw. In observe mode nothing blocks: deny
-   * passes through and a per-call transport failure fires {@code onPolicyError} and is treated as
-   * allowed.
+   * Inspect a complete sibling set through one ordered atomic decision. In enforce mode the first
+   * call in submission order represents a batch deny, pending, or rate-limit verdict.
    */
   public void inspectAll(List<NormalizedToolCall> calls) {
     if (calls == null || calls.isEmpty()) {
@@ -47,76 +42,64 @@ public final class ClavenarInspector {
     }
     boolean enforce = opts.mode() == Mode.ENFORCE;
 
-    List<CompletableFuture<Outcome>> futures = new ArrayList<>(calls.size());
-    for (NormalizedToolCall call : calls) {
-      futures.add(
-          CompletableFuture.supplyAsync(
-              () -> {
-                try {
-                  return Outcome.ok(Transport.inspect(call, opts));
-                } catch (ClavenarTransportException e) {
-                  if (!enforce) {
-                    return Outcome.fail(e);
-                  }
-                  throw e; // enforce: fail closed.
-                }
-              }));
-    }
-
-    // Await all first: in enforce, any transport error surfaces here (fail closed) before any deny
-    // is processed, matching Promise.all semantics.
+    Verdict verdict;
     try {
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-    } catch (CompletionException ce) {
-      throw unwrap(ce);
+      verdict =
+          calls.size() == 1
+              ? Transport.inspect(calls.get(0), opts)
+              : Transport.inspectBatch(calls, opts);
+    } catch (ClavenarTransportException error) {
+      if (enforce) {
+        throw error;
+      }
+      for (NormalizedToolCall call : calls) {
+        if (opts.onPolicyError() != null) {
+          opts.onPolicyError()
+              .accept(error, new VerdictContext(call.name(), call.id(), call.input()));
+        }
+      }
+      return;
     }
 
     for (int i = 0; i < calls.size(); i++) {
       NormalizedToolCall call = calls.get(i);
-      Outcome out = futures.get(i).join();
       VerdictContext ctx = new VerdictContext(call.name(), call.id(), call.input());
-      if (out.error != null) {
-        if (opts.onPolicyError() != null) {
-          opts.onPolicyError().accept(out.error, ctx);
-        }
-        continue;
-      }
       if (opts.onVerdict() != null) {
-        opts.onVerdict().accept(out.verdict, ctx);
+        opts.onVerdict().accept(verdict, ctx);
       }
       if (!enforce) {
         continue;
       }
-      switch (out.verdict.kind()) {
+      switch (verdict.kind()) {
         case DENY:
           ClavenarDenied denied =
               new ClavenarDenied(
                   call.name(),
-                  out.verdict.reasons(),
-                  out.verdict.reviewReasons(),
-                  out.verdict.intentCategory(),
-                  out.verdict.layer(),
-                  out.verdict.correlationId(),
-                  out.verdict.detail());
+                  verdict.reasons(),
+                  verdict.reviewReasons(),
+                  verdict.intentCategory(),
+                  verdict.layer(),
+                  verdict.correlationId(),
+                  verdict.detail());
           if (opts.devMode()) {
             DevMode.emitDenyPanel(denied);
           }
           throw denied;
         case PENDING:
-          String corr = out.verdict.correlationId();
+          String corr = verdict.correlationId();
           throw new ClavenarPending(
               call.name(),
               corr,
-              out.verdict.reviewReasons(),
+              verdict.reviewReasons(),
               () -> Transport.pollPendingOnce(corr, opts));
         case RATE_LIMITED:
           throw new ClavenarRateLimited(
               call.name(),
-              out.verdict.rateLimitCode(),
-              out.verdict.reasons(),
-              out.verdict.retryAfterSecs(),
-              out.verdict.layer(),
-              out.verdict.correlationId());
+              verdict.rateLimitCode(),
+              verdict.reasons(),
+              verdict.retryAfterSecs(),
+              verdict.layer(),
+              verdict.correlationId());
         default:
           break;
       }
@@ -136,32 +119,5 @@ public final class ClavenarInspector {
   /** Convenience: inspect one tool call whose arguments are a JSON-encoded string. */
   public void enforce(String toolName, String toolCallId, String argumentsJson) {
     inspectAll(List.of(NormalizedToolCall.fromJsonArguments(toolCallId, toolName, argumentsJson)));
-  }
-
-  private static ClavenarException unwrap(CompletionException ce) {
-    Throwable cause = ce.getCause();
-    if (cause instanceof ClavenarException ke) {
-      return ke;
-    }
-    String m = cause != null ? cause.getMessage() : ce.getMessage();
-    return new ClavenarTransportException("clavenar inspect failed: " + m);
-  }
-
-  private static final class Outcome {
-    final Verdict verdict;
-    final ClavenarTransportException error;
-
-    private Outcome(Verdict verdict, ClavenarTransportException error) {
-      this.verdict = verdict;
-      this.error = error;
-    }
-
-    static Outcome ok(Verdict v) {
-      return new Outcome(v, null);
-    }
-
-    static Outcome fail(ClavenarTransportException e) {
-      return new Outcome(null, e);
-    }
   }
 }

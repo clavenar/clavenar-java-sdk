@@ -20,7 +20,7 @@ Maven:
 <dependency>
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
 </dependency>
 ```
 
@@ -74,8 +74,10 @@ through unchanged.
 ## Verdicts and the error model
 
 `ClavenarInspector.inspect` returns a `Verdict` (`ALLOW` / `DENY` /
-`PENDING` / `RATE_LIMITED`). `inspectAll`, `enforce`, and the wrap facade
-translate, in enforce mode, to unchecked exceptions rooted at
+`PENDING` / `RATE_LIMITED`). Every call explicitly selects the side-effect-free
+`clavenar.decision/v1` contract with a UUID allocated before the first attempt;
+multi-tool turns use one ordered atomic decision. `inspectAll`, `enforce`, and
+the wrap facade translate, in enforce mode, to unchecked exceptions rooted at
 `ClavenarException`:
 
 | Exception | Meaning |
