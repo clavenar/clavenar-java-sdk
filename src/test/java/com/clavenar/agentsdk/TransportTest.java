@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -195,18 +197,28 @@ class TransportTest {
   @Test
   void retryThenSuccess() throws Exception {
     AtomicInteger n = new AtomicInteger();
+    List<String> bodies = new CopyOnWriteArrayList<>();
+    List<String> selectors = new CopyOnWriteArrayList<>();
+    List<String> ids = new CopyOnWriteArrayList<>();
     try (TestServer srv =
         new TestServer(
-            (m, p, b, h) ->
-                n.incrementAndGet() < 3
-                    ? TestServer.Response.of(503, null)
-                    : TestServer.Response.of(200, null))) {
+            (m, p, b, h) -> {
+              bodies.add(b);
+              selectors.add(h.getFirst(Transport.DECISION_CONTRACT_HEADER));
+              ids.add(h.getFirst(Transport.IDEMPOTENCY_ID_HEADER));
+              return n.incrementAndGet() < 3
+                  ? TestServer.Response.of(503, null)
+                  : TestServer.Response.of(200, null);
+            })) {
       ClavenarOptions opts =
           ClavenarOptions.builder(srv.baseUrl)
               .retry(new RetryOptions(3, Duration.ofMillis(1)))
               .build();
       assertEquals(VerdictKind.ALLOW, inspect(opts).kind());
       assertEquals(3, n.get());
+      assertEquals(1, bodies.stream().distinct().count());
+      assertEquals(List.of(Transport.DECISION_CONTRACT), selectors.stream().distinct().toList());
+      assertEquals(1, ids.stream().distinct().count());
     }
   }
 

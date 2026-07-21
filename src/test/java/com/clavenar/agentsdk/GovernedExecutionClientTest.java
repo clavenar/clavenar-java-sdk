@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -102,6 +103,48 @@ final class GovernedExecutionClientTest {
 
       assertThrows(IllegalStateException.class, () -> client.executePrepared(prepared));
       assertFalse(executed.get());
+    }
+  }
+
+  @Test
+  void executorFailureIsNeverRetried() throws Exception {
+    AtomicInteger decisions = new AtomicInteger();
+    AtomicInteger effects = new AtomicInteger();
+    try (TestServer server =
+        new TestServer(
+            (method, path, body, headers) -> {
+              decisions.incrementAndGet();
+              return TestServer.Response.of(200, authorization(body));
+            })) {
+      ClavenarOptions options =
+          ClavenarOptions.builder(server.baseUrl)
+              .retry(new RetryOptions(3, java.time.Duration.ofMillis(1)))
+              .build();
+      GovernedExecutionClient client =
+          new GovernedExecutionClient(
+              options,
+              "payments-provider",
+              request -> {
+                effects.incrementAndGet();
+                throw new IllegalStateException("provider response lost");
+              },
+              new GovernedExecutionClient.DurableExecutionStore() {
+                @Override
+                public void commitIntent(JsonNode intent) {}
+
+                @Override
+                public void commitCompletionAndEnqueueReceipt(JsonNode completion) {}
+              },
+              receipt -> {
+                throw new AssertionError("signer must not run");
+              });
+      PreparedToolRequest prepared =
+          GovernedExecutionClient.restore(
+              IDEMPOTENCY_ID, "payments.transfer", Json.MAPPER.readTree("{\"amount\":100}"));
+
+      assertThrows(IllegalStateException.class, () -> client.executePrepared(prepared));
+      assertEquals(1, decisions.get());
+      assertEquals(1, effects.get());
     }
   }
 

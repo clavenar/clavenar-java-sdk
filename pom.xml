@@ -6,7 +6,7 @@
 
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.2.0</version>
+  <version>1.3.0</version>
   <packaging>jar</packaging>
 
   <name>clavenar-agent-sdk</name>
@@ -62,6 +62,8 @@
         <targetPath>fixtures</targetPath>
         <includes>
           <include>sdk-cross-language-v1.fixture.json</include>
+          <include>retry-separation-v1.fixture.json</include>
+          <include>retry-separation-v1.schema.json</include>
         </includes>
       </resource>
     </resources>
