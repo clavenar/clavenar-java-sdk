@@ -76,7 +76,9 @@ through unchanged.
 `ClavenarInspector.inspect` returns a `Verdict` (`ALLOW` / `DENY` /
 `PENDING` / `RATE_LIMITED`). Every call explicitly selects the side-effect-free
 `clavenar.decision/v1` contract with a UUID allocated before the first attempt;
-multi-tool turns use one ordered atomic decision. `inspectAll`, `enforce`, and
+multi-tool turns use one ordered atomic decision. Proxy 0.5.0 and Lite 0.9.0
+reject unselected tool calls with HTTP 426; upgrade this SDK before the gateway
+by following <https://clavenar.com/docs/sdk-migration/>. `inspectAll`, `enforce`, and
 the wrap facade translate, in enforce mode, to unchecked exceptions rooted at
 `ClavenarException`:
 
