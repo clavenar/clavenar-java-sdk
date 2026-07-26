@@ -5,6 +5,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-26
+
+### Added
+
+- `SecureTransportProfile` reloads PKCS#8 client identity and pinned trust
+  sources per request, acquires the current token, and applies separate
+  deadlines and explicit proxy policy across every transport path.
+
 ## [1.4.0] - 2026-07-21
 
 ### Changed

@@ -18,6 +18,7 @@ public final class ClavenarOptions {
   private final Duration timeout;
   private final RetryOptions retry;
   private final HttpClient httpClient;
+  private final SecureTransportProfile secureTransport;
   private final BiConsumer<Verdict, VerdictContext> onVerdict;
   private final BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
   private final boolean devMode;
@@ -27,9 +28,10 @@ public final class ClavenarOptions {
     this.endpoint = b.endpoint;
     this.token = b.token;
     this.mode = b.mode;
-    this.timeout = b.timeout;
+    this.timeout = b.secureTransport != null ? b.secureTransport.requestTimeout() : b.timeout;
     this.retry = b.retry;
     this.httpClient = b.httpClient;
+    this.secureTransport = b.secureTransport;
     this.onVerdict = b.onVerdict;
     this.onPolicyError = b.onPolicyError;
     this.devMode = b.devMode;
@@ -62,7 +64,13 @@ public final class ClavenarOptions {
 
   /** The configured client, or a shared default when none was set. */
   public HttpClient httpClient() {
-    return httpClient != null ? httpClient : DEFAULT_CLIENT;
+    return secureTransport != null
+        ? secureTransport.client()
+        : (httpClient != null ? httpClient : DEFAULT_CLIENT);
+  }
+
+  String effectiveToken() {
+    return secureTransport != null ? secureTransport.token() : token;
   }
 
   public BiConsumer<Verdict, VerdictContext> onVerdict() {
@@ -105,6 +113,10 @@ public final class ClavenarOptions {
     if (timeout == null || timeout.isZero() || timeout.isNegative()) {
       throw new ClavenarConfigException("clavenar: timeout must be positive");
     }
+    if (secureTransport != null && (httpClient != null || token != null)) {
+      throw new ClavenarConfigException(
+          "clavenar: secure transport cannot be combined with token or httpClient");
+    }
   }
 
   /** Fluent builder for {@link ClavenarOptions}. */
@@ -115,6 +127,7 @@ public final class ClavenarOptions {
     private Duration timeout = Duration.ofSeconds(10);
     private RetryOptions retry = RetryOptions.defaults();
     private HttpClient httpClient;
+    private SecureTransportProfile secureTransport;
     private BiConsumer<Verdict, VerdictContext> onVerdict;
     private BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
     private boolean devMode;
@@ -152,6 +165,11 @@ public final class ClavenarOptions {
 
     public Builder httpClient(HttpClient httpClient) {
       this.httpClient = httpClient;
+      return this;
+    }
+
+    public Builder secureTransport(SecureTransportProfile secureTransport) {
+      this.secureTransport = secureTransport;
       return this;
     }
 

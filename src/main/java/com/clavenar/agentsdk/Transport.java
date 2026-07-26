@@ -189,8 +189,9 @@ final class Transport {
             .header(DECISION_CONTRACT_HEADER, DECISION_CONTRACT)
             .header(IDEMPOTENCY_ID_HEADER, idempotencyId)
             .POST(HttpRequest.BodyPublishers.ofString(body));
-    if (o.token() != null && !o.token().isEmpty()) {
-      builder.header("Authorization", "Bearer " + o.token());
+    String token = o.effectiveToken();
+    if (token != null && !token.isEmpty()) {
+      builder.header("Authorization", "Bearer " + token);
     }
     return builder;
   }
@@ -200,8 +201,9 @@ final class Transport {
         "/pending/" + URLEncoder.encode(correlationId, StandardCharsets.UTF_8).replace("+", "%20");
     HttpRequest.Builder rb =
         HttpRequest.newBuilder(URI.create(joinUrl(o.endpoint(), path))).timeout(o.timeout()).GET();
-    if (o.token() != null && !o.token().isEmpty()) {
-      rb.header("Authorization", "Bearer " + o.token());
+    String token = o.effectiveToken();
+    if (token != null && !token.isEmpty()) {
+      rb.header("Authorization", "Bearer " + token);
     }
 
     HttpResponse<String> resp = send(o.httpClient(), rb.build(), o.timeout(), "poll");
