@@ -16,8 +16,8 @@ so the published artifact stays provider-dependency-free. Build the SDK
 first, then the examples:
 
 ```bash
-mvn -DskipTests install            # install com.clavenar:agent-sdk to ~/.m2
-mvn -f examples/pom.xml compile
+mvn install                         # test and install com.clavenar:agent-sdk
+mvn -f examples/pom.xml verify
 ```
 
 Each module has a runnable `Main` (reads `CLAVENAR_ENDPOINT`, default a

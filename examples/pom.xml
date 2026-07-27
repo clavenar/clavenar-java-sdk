@@ -6,8 +6,8 @@
 
   <!-- A standalone reactor (not part of the published SDK) demonstrating
        each integration. Depends on the locally installed com.clavenar:agent-sdk;
-       run `mvn -DskipTests install` in the repo root first, then
-       `mvn -f examples/pom.xml compile`. -->
+       run `mvn install` in the repo root first, then
+       `mvn -f examples/pom.xml verify`. -->
   <groupId>com.clavenar.examples</groupId>
   <artifactId>clavenar-agent-sdk-examples</artifactId>
   <version>1.0.0</version>
@@ -16,7 +16,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
-    <clavenar.version>1.0.0</clavenar.version>
+    <clavenar.version>1.5.0</clavenar.version>
   </properties>
 
   <modules>
