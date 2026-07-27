@@ -93,4 +93,4 @@ Java coding standards (this stack):
 ## Pointers
 README.md · SECURITY.md · docs/SEQUENCES.md (StreamGate event ordering) · docs/PARITY.md
 (1:1 map vs. the TypeScript reference + Java-idiom additions) · CHANGELOG.md · CONTRIBUTING.md
-(release / Maven Central flow).
+(protected GitHub Packages and release flow).

@@ -1,48 +1,86 @@
 name: release
-
-# Push a tag matching v* (e.g. v1.0.0) that equals the POM <version> to
-# publish to Maven Central. Requires the com.clavenar namespace + GPG key
-# and these repo secrets: CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD,
-# GPG_PRIVATE_KEY, GPG_PASSPHRASE. See CONTRIBUTING.md.
+run-name: publish ${{ github.event.client_payload.publication_id }}
 
 on:
-  push:
-    tags:
-      - 'v*'
+  repository_dispatch:
+    types: [clavenar-protected-publication]
 
 permissions:
-  contents: read
+  contents: write
+  packages: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ github.event.client_payload.source_sha }}
       - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17.0.19+10'
           cache: maven
-          server-id: central
-          server-username: CENTRAL_TOKEN_USERNAME
-          server-password: CENTRAL_TOKEN_PASSWORD
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
 
-      - name: Verify tag matches project version
+      - name: Verify protected publication input
+        env:
+          COMPONENT_VERSION: ${{ github.event.client_payload.component_version }}
+          RELEASE_REFERENCE: ${{ github.event.client_payload.release_reference }}
+          SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          test "$GITHUB_ACTOR" = "vanteguardlabs"
+          [[ "$RELEASE_REFERENCE" =~ ^ghcr\.io/clavenar/clavenar-stack-release@sha256:[0-9a-f]{64}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           POM="$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)"
-          if [ "$TAG" != "$POM" ]; then
-            echo "::error::tag '$GITHUB_REF_NAME' (version '$TAG') does not match pom.xml '$POM'"
+          if [ "$COMPONENT_VERSION" != "$POM" ]; then
+            echo "::error::protected component version does not match pom.xml '$POM'"
             exit 1
           fi
 
       - run: mvn -B verify
 
-      - name: Deploy to Maven Central
-        run: mvn -B -Prelease -DskipTests deploy
+      - name: Check whether this exact Maven package is already published
+        id: registry
         env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.client_payload.component_version }}
+        run: |
+          url="https://maven.pkg.github.com/clavenar/clavenar-java-sdk/com/clavenar/agent-sdk/$VERSION/agent-sdk-$VERSION.pom"
+          code="$(curl -sS -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+            -o /tmp/maven-package.xml -w '%{http_code}' "$url")"
+          if [ "$code" = 200 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = 404 ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat /tmp/maven-package.xml >&2
+            exit 1
+          fi
+
+      - name: Publish to GitHub Packages Maven registry
+        if: steps.registry.outputs.exists == 'false'
+        run: mvn -B -DskipTests deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the exact source tag and release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.client_payload.component_version }}
+          SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+        run: |
+          tag="v$VERSION"
+          assets=(pom.xml "target/agent-sdk-$VERSION.jar" target/bom.json target/bom.xml)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" \
+              --jq '.object.sha')" = "$SOURCE_SHA"
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" --target "$SOURCE_SHA" \
+              --title "$tag — com.clavenar:agent-sdk" \
+              --notes "Published from the accepted protected Clavenar release." \
+              "${assets[@]}"
+          fi

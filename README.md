@@ -1,7 +1,7 @@
 # clavenar-java-sdk
 
 [![CI](https://github.com/clavenar/clavenar-java-sdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/clavenar/clavenar-java-sdk/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/com.clavenar/agent-sdk.svg)](https://central.sonatype.com/artifact/com.clavenar/agent-sdk)
+[![Release](https://img.shields.io/github/v/release/clavenar/clavenar-java-sdk)](https://github.com/clavenar/clavenar-java-sdk/releases)
 
 Java SDK for [Clavenar](https://clavenar.com). Inspect the tool calls a
 model emits against your policies *before* your agent runs them.
@@ -14,20 +14,26 @@ Part of the by-language agent-wrapper SDK family alongside
 
 ## Install
 
-Maven:
+The Maven registry uses GitHub Packages authentication. Add
+`https://maven.pkg.github.com/clavenar/clavenar-java-sdk` as repository
+`github` and put a GitHub token with `read:packages` in the matching
+`~/.m2/settings.xml` server entry. The same JAR is attached anonymously to the
+versioned GitHub release.
+
+Maven dependency:
 
 ```xml
 <dependency>
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.3.0</version>
+  <version>1.5.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.clavenar:agent-sdk:1.1.0")
+implementation("com.clavenar:agent-sdk:1.5.0")
 ```
 
 Requires Java 17+. The only runtime dependency is Jackson; the SDK takes
