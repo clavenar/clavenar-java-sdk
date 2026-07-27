@@ -5,6 +5,13 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-27
+
+### Changed
+
+- Republish the unchanged 1.5 SDK behavior from the exact protected source
+  commit after correcting idempotent Maven registry detection.
+
 ## [1.5.0] - 2026-07-26
 
 ### Added
