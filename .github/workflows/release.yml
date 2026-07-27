@@ -49,7 +49,7 @@ jobs:
           VERSION: ${{ github.event.client_payload.component_version }}
         run: |
           url="https://maven.pkg.github.com/clavenar/clavenar-java-sdk/com/clavenar/agent-sdk/$VERSION/agent-sdk-$VERSION.pom"
-          code="$(curl -sS -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+          code="$(curl -sSL -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
             -o /tmp/maven-package.xml -w '%{http_code}' "$url")"
           if [ "$code" = 200 ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
