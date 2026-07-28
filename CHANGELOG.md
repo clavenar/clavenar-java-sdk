@@ -5,6 +5,13 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-07-28
+
+### Changed
+
+- Bind the exact external-install documentation to a new immutable source tag
+  and anonymous release asset set.
+
 ## [1.5.1] - 2026-07-27
 
 ### Changed

@@ -6,7 +6,7 @@
 
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.5.1</version>
+  <version>1.5.2</version>
   <packaging>jar</packaging>
 
   <name>clavenar-agent-sdk</name>
