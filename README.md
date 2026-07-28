@@ -20,6 +20,18 @@ The Maven registry uses GitHub Packages authentication. Add
 `~/.m2/settings.xml` server entry. The same JAR is attached anonymously to the
 versioned GitHub release.
 
+For an anonymous, byte-exact download of the current package and publication
+evidence:
+
+```bash
+base=https://github.com/clavenar/clavenar-java-sdk/releases/download/v1.5.1
+curl -fsSLO "$base/agent-sdk-1.5.1.jar"
+curl -fsSLO "$base/pom.xml"
+curl -fsSLO "$base/bom.json"
+curl -fsSLO "$base/bom.xml"
+jar tf agent-sdk-1.5.1.jar >/dev/null
+```
+
 Maven dependency:
 
 ```xml
