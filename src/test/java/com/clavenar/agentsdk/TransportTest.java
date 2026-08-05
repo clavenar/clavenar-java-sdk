@@ -31,6 +31,33 @@ class TransportTest {
   }
 
   @Test
+  void exactDecisionAllowEnvelope() throws Exception {
+    String body =
+        """
+        {"contract":"clavenar.decision/v1","decision":"allow","correlation_id":"decision-correlation","executable":false}""";
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(200, body))) {
+      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
+      assertEquals(VerdictKind.ALLOW, v.kind());
+      assertEquals("decision-correlation", v.correlationId());
+    }
+  }
+
+  @Test
+  void decisionAllowCorrelationMismatchFailsClosed() throws Exception {
+    String body =
+        """
+        {"contract":"clavenar.decision/v1","decision":"allow","correlation_id":"body-correlation","executable":false}""";
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> TestServer.Response.of(200, body).corr("header-correlation"))) {
+      ClavenarTransportException error =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(200, error.status());
+      assertTrue(error.getMessage().contains("correlation id header/body mismatch"));
+    }
+  }
+
+  @Test
   void arbitraryAllowBodyFailsClosed() throws Exception {
     try (TestServer srv =
         new TestServer(

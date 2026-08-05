@@ -115,12 +115,33 @@ final class Transport {
             throw new ClavenarTransportException(
                 "clavenar 200 with unparseable body: " + error.getMessage(), 200);
           }
-          if (allow == null
-              || !allow.isObject()
-              || allow.size() != 1
-              || !"allow".equals(allow.path("verdict").asText())) {
+          boolean legacyAllow =
+              allow != null
+                  && allow.isObject()
+                  && allow.size() == 1
+                  && "allow".equals(allow.path("verdict").asText());
+          boolean contractAllow =
+              allow != null
+                  && allow.isObject()
+                  && allow.size() == 4
+                  && DECISION_CONTRACT.equals(allow.path("contract").asText())
+                  && "allow".equals(allow.path("decision").asText())
+                  && !allow.path("correlation_id").asText().isBlank()
+                  && allow.path("executable").isBoolean()
+                  && !allow.path("executable").asBoolean();
+          if (!legacyAllow && !contractAllow) {
             throw new ClavenarTransportException(
                 "clavenar 200 with unexpected body shape: " + preview(resp.body()), 200);
+          }
+          if (contractAllow) {
+            String bodyCorrelation = allow.path("correlation_id").asText();
+            if (corr != null && !corr.equals(bodyCorrelation)) {
+              throw new ClavenarTransportException(
+                  "clavenar 200 correlation id header/body mismatch", 200);
+            }
+            if (corr == null) {
+              corr = bodyCorrelation;
+            }
           }
         }
         return new Verdict(VerdictKind.ALLOW, corr, null, null, null, null);
