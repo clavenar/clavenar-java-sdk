@@ -21,13 +21,19 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
-/** Reusable reload-before-request mTLS, token, deadline, and proxy profile. */
-public final class SecureTransportProfile {
+/** Reusable cached mTLS, token, deadline, and proxy profile with explicit rotation. */
+public final class SecureTransportProfile implements AutoCloseable {
+  private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
+  private static final AtomicLong THREAD_SEQUENCE = new AtomicLong();
+
   /** Explicit proxy behavior; environment variables are consulted only in ENVIRONMENT mode. */
   public enum ProxyMode {
     DIRECT,
@@ -43,6 +49,8 @@ public final class SecureTransportProfile {
   private final Duration requestTimeout;
   private final ProxyMode proxyMode;
   private final URI proxyUri;
+  private volatile ClientSnapshot snapshot;
+  private volatile boolean closed;
 
   private SecureTransportProfile(Builder builder) {
     this.caBundle = builder.caBundle;
@@ -60,8 +68,56 @@ public final class SecureTransportProfile {
     return new Builder(caBundle, clientCertificate, privateKey);
   }
 
-  /** Build a complete fresh TLS client snapshot from the current source files. */
+  /** Return the cached TLS client, building one complete snapshot on first use. */
   public HttpClient client() {
+    ClientSnapshot current = snapshot;
+    if (current != null) {
+      return current.client();
+    }
+    synchronized (this) {
+      ensureOpen();
+      if (snapshot == null) {
+        snapshot = buildSnapshot();
+      }
+      return snapshot.client();
+    }
+  }
+
+  /** Atomically replace the cached TLS snapshot after certificate rotation. */
+  public synchronized void reload() {
+    ensureOpen();
+    ClientSnapshot next = buildSnapshot();
+    ClientSnapshot previous = snapshot;
+    snapshot = next;
+    if (previous != null) {
+      previous.executor().shutdownNow();
+    }
+  }
+
+  /** Stop the profile-owned connection executor and reject subsequent requests. */
+  @Override
+  public synchronized void close() {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    ClientSnapshot previous = snapshot;
+    snapshot = null;
+    if (previous != null) {
+      previous.executor().shutdownNow();
+    }
+  }
+
+  private ClientSnapshot buildSnapshot() {
+    ExecutorService executor =
+        Executors.newCachedThreadPool(
+            task -> {
+              Thread thread =
+                  new Thread(
+                      task, "clavenar-secure-transport-" + THREAD_SEQUENCE.incrementAndGet());
+              thread.setDaemon(true);
+              return thread;
+            });
     try {
       CertificateFactory certificates = CertificateFactory.getInstance("X.509");
       List<Certificate> chain =
@@ -99,15 +155,17 @@ public final class SecureTransportProfile {
       SSLContext tls = SSLContext.getInstance("TLS");
       tls.init(keyManagers.getKeyManagers(), trustManagers.getTrustManagers(), new SecureRandom());
       HttpClient.Builder client =
-          HttpClient.newBuilder().sslContext(tls).connectTimeout(connectTimeout);
+          HttpClient.newBuilder().sslContext(tls).connectTimeout(connectTimeout).executor(executor);
       ProxySelector selector = proxySelector();
       if (selector != null) {
         client.proxy(selector);
       }
-      return client.build();
+      return new ClientSnapshot(client.build(), executor);
     } catch (ClavenarConfigException error) {
+      executor.shutdownNow();
       throw error;
     } catch (Exception error) {
+      executor.shutdownNow();
       throw new ClavenarConfigException(
           "cannot build secure transport profile: " + error.getMessage());
     }
@@ -115,6 +173,7 @@ public final class SecureTransportProfile {
 
   /** Acquire the current token for one request. */
   public String token() {
+    ensureOpen();
     if (tokenSource == null) {
       return null;
     }
@@ -122,7 +181,12 @@ public final class SecureTransportProfile {
     if (token == null || token.strip().isEmpty()) {
       throw new ClavenarConfigException("secure transport token source returned an empty token");
     }
-    return token.strip();
+    String value = token.strip();
+    if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+      throw new ClavenarConfigException(
+          "secure transport token source returned a multi-line token");
+    }
+    return value;
   }
 
   public Duration requestTimeout() {
@@ -135,13 +199,26 @@ public final class SecureTransportProfile {
         || connectTimeout.isZero()
         || requestTimeout.isZero()
         || connectTimeout.isNegative()
-        || requestTimeout.isNegative()) {
-      throw new ClavenarConfigException("secure transport timeouts must be positive");
+        || requestTimeout.isNegative()
+        || connectTimeout.compareTo(MAX_TIMEOUT) > 0
+        || requestTimeout.compareTo(MAX_TIMEOUT) > 0) {
+      throw new ClavenarConfigException(
+          "secure transport timeouts must be positive and no greater than 5 minutes");
+    }
+    if (proxyMode == null) {
+      throw new ClavenarConfigException("secure transport proxy mode is required");
+    }
+    if (proxyMode != ProxyMode.EXPLICIT && proxyUri != null) {
+      throw new ClavenarConfigException(
+          "secure transport proxy URI is valid only in EXPLICIT mode");
     }
     if (proxyMode == ProxyMode.EXPLICIT
         && (proxyUri == null
             || proxyUri.getHost() == null
-            || (!"http".equals(proxyUri.getScheme()) && !"https".equals(proxyUri.getScheme())))) {
+            || (!"http".equals(proxyUri.getScheme()) && !"https".equals(proxyUri.getScheme()))
+            || proxyUri.getUserInfo() != null
+            || proxyUri.getQuery() != null
+            || proxyUri.getFragment() != null)) {
       throw new ClavenarConfigException(
           "secure transport explicit proxy must use an absolute HTTP(S) URL");
     }
@@ -164,6 +241,15 @@ public final class SecureTransportProfile {
     }
     if (selected == null) {
       return null;
+    }
+    if (selected.getHost() == null
+        || (!"http".equals(selected.getScheme()) && !"https".equals(selected.getScheme()))
+        || selected.getUserInfo() != null
+        || selected.getQuery() != null
+        || selected.getFragment() != null) {
+      throw new ClavenarConfigException(
+          "secure transport proxy must be an absolute HTTP(S) URL without credentials, query, or"
+              + " fragment");
     }
     int port = selected.getPort() >= 0 ? selected.getPort() : 80;
     return ProxySelector.of(new InetSocketAddress(selected.getHost(), port));
@@ -197,6 +283,14 @@ public final class SecureTransportProfile {
     }
     throw new ClavenarConfigException("unsupported secure transport PKCS#8 private key");
   }
+
+  private void ensureOpen() {
+    if (closed) {
+      throw new ClavenarConfigException("secure transport profile is closed");
+    }
+  }
+
+  private record ClientSnapshot(HttpClient client, ExecutorService executor) {}
 
   /** Builder for one immutable profile. */
   public static final class Builder {

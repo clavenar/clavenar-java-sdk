@@ -31,6 +31,29 @@ class TransportTest {
   }
 
   @Test
+  void arbitraryAllowBodyFailsClosed() throws Exception {
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) ->
+                TestServer.Response.of(200, "{\"verdict\":\"allow\",\"unexpected\":true}"))) {
+      ClavenarTransportException error =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(200, error.status());
+    }
+  }
+
+  @Test
+  void oversizedResponseFailsBeforeParsing() throws Exception {
+    String body = "x".repeat((1024 * 1024) + 1);
+    try (TestServer srv = new TestServer((m, p, b, h) -> TestServer.Response.of(200, body))) {
+      ClavenarTransportException error =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(200, error.status());
+      assertTrue(error.getMessage().contains("exceeded"));
+    }
+  }
+
+  @Test
   void deny() throws Exception {
     String body =
         """
@@ -120,14 +143,13 @@ class TransportTest {
   }
 
   @Test
-  void pendingHeaderWins() throws Exception {
+  void pendingHeaderBodyMismatchFailsClosed() throws Exception {
     String body = "{\"status\":\"pending\",\"correlation_id\":\"cb\",\"review_reasons\":[\"x\"]}";
     try (TestServer srv =
         new TestServer((m, p, b, h) -> TestServer.Response.of(202, body).corr("ch"))) {
-      Verdict v = inspect(Fixtures.opts(srv.baseUrl));
-      assertEquals(VerdictKind.PENDING, v.kind());
-      assertEquals("ch", v.correlationId());
-      assertEquals(java.util.List.of("x"), v.reviewReasons());
+      ClavenarTransportException error =
+          assertThrows(ClavenarTransportException.class, () -> inspect(Fixtures.opts(srv.baseUrl)));
+      assertEquals(202, error.status());
     }
   }
 
@@ -246,8 +268,7 @@ class TransportTest {
         ClavenarOptions.builder("http://127.0.0.1:9")
             .retry(new RetryOptions(0, Duration.ofMillis(1)))
             .build();
-    ClavenarTransportException e =
-        assertThrows(ClavenarTransportException.class, () -> inspect(opts));
+    ClavenarConfigException e = assertThrows(ClavenarConfigException.class, () -> inspect(opts));
     assertTrue(e.getMessage().contains("maxAttempts"));
   }
 
@@ -273,6 +294,7 @@ class TransportTest {
       ClavenarOptions opts =
           ClavenarOptions.builder(srv.baseUrl)
               .token("tok")
+              .allowInsecureLoopback(true)
               .retry(new RetryOptions(1, Duration.ofMillis(1)))
               .build();
       inspect(opts);

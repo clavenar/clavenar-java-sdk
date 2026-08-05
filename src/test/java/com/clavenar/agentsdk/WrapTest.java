@@ -30,6 +30,8 @@ class WrapTest {
 
   record FakeStoppedMessage(List<FakeBlock> content, String stop_reason) {}
 
+  record FakeMessageWithoutContent(String stop_reason) {}
+
   // Fake OpenAI-shaped client.
   interface FakeOpenAI {
     FakeChat chat();
@@ -170,10 +172,9 @@ class WrapTest {
     assertEquals("raw-stream", result);
   }
 
-  // Provider-shape drift: the turn declares tool use but the blocks aren't extractable. The call
-  // must still pass through (fail-open by contract) while declaresToolUse flags the mismatch.
+  // Provider-shape drift must fail closed in enforce mode.
   @Test
-  void driftedAnthropicShapePassesThroughButFlagsMismatch() throws Exception {
+  void driftedAnthropicShapeFailsClosed() throws Exception {
     FakeMessages msgs =
         params ->
             new FakeStoppedMessage(
@@ -181,9 +182,33 @@ class WrapTest {
                 "tool_use");
     FakeAnthropic client = () -> msgs;
     FakeAnthropic wrapped = Clavenar.wrap(client, Fixtures.opts("http://127.0.0.1:9"));
-    Object result = wrapped.messages().create(new Object());
-    assertEquals(FakeStoppedMessage.class, result.getClass());
-    assertTrue(Clavenar.declaresToolUse(Json.MAPPER.valueToTree(result)));
+    assertThrows(ClavenarTransportException.class, () -> wrapped.messages().create(new Object()));
+  }
+
+  @Test
+  void missingAnthropicContentFailsClosed() {
+    FakeMessages msgs = params -> new FakeMessageWithoutContent("end_turn");
+    FakeAnthropic wrapped =
+        Clavenar.wrap((FakeAnthropic) () -> msgs, Fixtures.opts("http://127.0.0.1:9"));
+    assertThrows(ClavenarTransportException.class, () -> wrapped.messages().create(new Object()));
+  }
+
+  @Test
+  void driftedAnthropicShapeReportsAndPassesInObserve() throws Exception {
+    FakeStoppedMessage response =
+        new FakeStoppedMessage(
+            List.of(new FakeBlock("tool_use_v2", "toolu_1", "delete_user", Map.of())), "tool_use");
+    FakeMessages msgs = params -> response;
+    FakeAnthropic client = () -> msgs;
+    List<String> errors = new java.util.ArrayList<>();
+    ClavenarOptions opts =
+        ClavenarOptions.builder("http://127.0.0.1:9")
+            .observe()
+            .onPolicyError((error, context) -> errors.add(error.getMessage()))
+            .build();
+    FakeAnthropic wrapped = Clavenar.wrap(client, opts);
+    assertEquals(response, wrapped.messages().create(new Object()));
+    assertEquals(1, errors.size());
   }
 
   @Test

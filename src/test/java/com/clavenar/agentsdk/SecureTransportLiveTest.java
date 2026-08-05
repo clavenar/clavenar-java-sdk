@@ -34,8 +34,10 @@ final class SecureTransportLiveTest {
         Path.of(required("CLAVENAR_SECURE_TRANSPORT_NEXT_KEY")),
         key,
         StandardCopyOption.REPLACE_EXISTING);
+    profile.reload();
     assertEquals(VerdictKind.ALLOW, Transport.inspect(call, options).kind());
     assertEquals(2, generation.get());
+    profile.close();
   }
 
   private static String required(String name) {

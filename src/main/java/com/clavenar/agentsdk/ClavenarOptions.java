@@ -3,6 +3,8 @@ package com.clavenar.agentsdk;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiConsumer;
 
 /**
@@ -11,6 +13,8 @@ import java.util.function.BiConsumer;
  */
 public final class ClavenarOptions {
   private static final HttpClient DEFAULT_CLIENT = HttpClient.newBuilder().build();
+  private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
+  private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(1);
 
   private final String endpoint;
   private final String token;
@@ -23,6 +27,8 @@ public final class ClavenarOptions {
   private final BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
   private final boolean devMode;
   private final boolean allowUninspectedStream;
+  private final boolean allowInsecureLoopback;
+  private final Executor asyncExecutor;
 
   private ClavenarOptions(Builder b) {
     this.endpoint = b.endpoint;
@@ -36,6 +42,8 @@ public final class ClavenarOptions {
     this.onPolicyError = b.onPolicyError;
     this.devMode = b.devMode;
     this.allowUninspectedStream = b.allowUninspectedStream;
+    this.allowInsecureLoopback = b.allowInsecureLoopback;
+    this.asyncExecutor = b.asyncExecutor;
   }
 
   public static Builder builder(String endpoint) {
@@ -97,25 +105,63 @@ public final class ClavenarOptions {
     return allowUninspectedStream;
   }
 
+  Executor asyncExecutor() {
+    return asyncExecutor;
+  }
+
   void validate() {
     if (endpoint == null || endpoint.isEmpty()) {
       throw new ClavenarConfigException("clavenar: endpoint is required");
     }
     try {
       URI u = URI.create(endpoint);
-      if (u.getScheme() == null || u.getHost() == null) {
+      String scheme = u.getScheme();
+      if ((!"http".equals(scheme) && !"https".equals(scheme))
+          || u.getHost() == null
+          || u.getUserInfo() != null
+          || u.getQuery() != null
+          || u.getFragment() != null) {
         throw new ClavenarConfigException(
-            "clavenar: endpoint is not a valid absolute URL: " + endpoint);
+            "clavenar: endpoint must be an absolute HTTP(S) URL without credentials, query, or"
+                + " fragment: "
+                + endpoint);
+      }
+      boolean hasCredentials = token != null || secureTransport != null;
+      if (hasCredentials && !"https".equals(scheme)) {
+        boolean loopback = "127.0.0.1".equals(u.getHost()) || "[::1]".equals(u.getHost());
+        if (!allowInsecureLoopback || !loopback) {
+          throw new ClavenarConfigException(
+              "clavenar: credentials require HTTPS; insecure transport is allowed only for an"
+                  + " explicit loopback development endpoint");
+        }
       }
     } catch (IllegalArgumentException e) {
       throw new ClavenarConfigException("clavenar: endpoint is not a valid URL: " + endpoint);
     }
-    if (timeout == null || timeout.isZero() || timeout.isNegative()) {
-      throw new ClavenarConfigException("clavenar: timeout must be positive");
+    if (timeout == null
+        || timeout.isZero()
+        || timeout.isNegative()
+        || timeout.compareTo(MAX_TIMEOUT) > 0) {
+      throw new ClavenarConfigException("clavenar: timeout must be in (0, 5 minutes]");
     }
     if (secureTransport != null && (httpClient != null || token != null)) {
       throw new ClavenarConfigException(
           "clavenar: secure transport cannot be combined with token or httpClient");
+    }
+    if (token != null
+        && (token.isBlank() || token.indexOf('\r') >= 0 || token.indexOf('\n') >= 0)) {
+      throw new ClavenarConfigException("clavenar: token must be non-empty and single-line");
+    }
+    if (mode == null || retry == null || asyncExecutor == null) {
+      throw new ClavenarConfigException("clavenar: mode, retry, and asyncExecutor are required");
+    }
+    if (retry.maxAttempts() < 1 || retry.maxAttempts() > 10) {
+      throw new ClavenarConfigException("clavenar: retry.maxAttempts must be in [1, 10]");
+    }
+    if (retry.baseDelay() == null
+        || retry.baseDelay().isNegative()
+        || retry.baseDelay().compareTo(MAX_RETRY_DELAY) > 0) {
+      throw new ClavenarConfigException("clavenar: retry.baseDelay must be in [0, 1 minute]");
     }
   }
 
@@ -132,6 +178,8 @@ public final class ClavenarOptions {
     private BiConsumer<ClavenarTransportException, VerdictContext> onPolicyError;
     private boolean devMode;
     private boolean allowUninspectedStream;
+    private boolean allowInsecureLoopback;
+    private Executor asyncExecutor = ForkJoinPool.commonPool();
 
     private Builder(String endpoint) {
       this.endpoint = endpoint;
@@ -199,6 +247,18 @@ public final class ClavenarOptions {
      */
     public Builder allowUninspectedStream(boolean allowUninspectedStream) {
       this.allowUninspectedStream = allowUninspectedStream;
+      return this;
+    }
+
+    /** Permit credentials over HTTP only for an explicit 127.0.0.1 / ::1 DEV endpoint. */
+    public Builder allowInsecureLoopback(boolean allowInsecureLoopback) {
+      this.allowInsecureLoopback = allowInsecureLoopback;
+      return this;
+    }
+
+    /** Executor used by {@link ClavenarInspector}'s asynchronous methods. */
+    public Builder asyncExecutor(Executor asyncExecutor) {
+      this.asyncExecutor = asyncExecutor;
       return this;
     }
 

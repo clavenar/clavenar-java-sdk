@@ -8,4 +8,8 @@ public abstract class ClavenarException extends RuntimeException {
   protected ClavenarException(String message) {
     super(message);
   }
+
+  protected ClavenarException(String message, Throwable cause) {
+    super(message, cause);
+  }
 }

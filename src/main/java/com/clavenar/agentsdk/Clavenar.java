@@ -18,7 +18,6 @@ import java.util.function.Function;
  * prefer {@link ClavenarInspector} at the tool-dispatch boundary.
  */
 public final class Clavenar {
-  private static final System.Logger LOG = System.getLogger(Clavenar.class.getName());
   private static final List<String> STREAMING_CREATE_METHODS =
       List.of("createStreaming", "stream", "createStreamRaw");
 
@@ -67,13 +66,36 @@ public final class Clavenar {
           if (accessorChain.isEmpty() && "create".equals(name)) {
             Object result = invoke(target, method, args);
             JsonNode tree = Json.MAPPER.valueToTree(result);
-            List<NormalizedToolCall> calls = extractor.apply(tree);
-            if (calls.isEmpty() && declaresToolUse(tree)) {
-              LOG.log(
-                  System.Logger.Level.WARNING,
-                  "clavenar: response declares tool use (stop_reason/finish_reason) but no tool"
-                      + " calls were extracted — the provider response shape may have drifted;"
-                      + " tool calls were NOT inspected");
+            List<NormalizedToolCall> calls;
+            try {
+              calls = extractor.apply(tree);
+              if (calls.isEmpty() && declaresToolUse(tree)) {
+                throw new ClavenarTransportException(
+                    "clavenar: provider response declared tool use but contained no valid tool"
+                        + " call");
+              }
+            } catch (ClavenarTransportException error) {
+              if (opts.mode() == Mode.ENFORCE) {
+                throw error;
+              }
+              if (opts.onPolicyError() != null) {
+                opts.onPolicyError()
+                    .accept(error, new VerdictContext("<provider-response>", "<unknown>", tree));
+              }
+              return result;
+            } catch (ClavenarConfigException error) {
+              ClavenarTransportException shapeError =
+                  new ClavenarTransportException(
+                      "clavenar: provider response contained a malformed tool call", error);
+              if (opts.mode() == Mode.ENFORCE) {
+                throw shapeError;
+              }
+              if (opts.onPolicyError() != null) {
+                opts.onPolicyError()
+                    .accept(
+                        shapeError, new VerdictContext("<provider-response>", "<unknown>", tree));
+              }
+              return result;
             }
             inspector.inspectAll(calls);
             return result;
@@ -129,13 +151,22 @@ public final class Clavenar {
   private static List<NormalizedToolCall> extractAnthropic(JsonNode tree) {
     List<NormalizedToolCall> out = new ArrayList<>();
     JsonNode content = tree.path("content");
-    if (content.isArray()) {
-      for (JsonNode b : content) {
-        if ("tool_use".equals(b.path("type").asText())) {
-          out.add(
-              new NormalizedToolCall(
-                  b.path("id").asText(), b.path("name").asText(), b.path("input")));
+    if (!content.isArray()) {
+      throw new ClavenarTransportException(
+          "clavenar: Anthropic response is missing its content array");
+    }
+    for (JsonNode b : content) {
+      if ("tool_use".equals(b.path("type").asText())) {
+        if (!b.path("id").isTextual()
+            || b.path("id").asText().isEmpty()
+            || !b.path("name").isTextual()
+            || b.path("name").asText().isEmpty()) {
+          throw new ClavenarTransportException(
+              "clavenar: Anthropic tool_use block is missing a valid id or name");
         }
+        out.add(
+            new NormalizedToolCall(
+                b.path("id").asText(), b.path("name").asText(), b.path("input")));
       }
     }
     return out;
@@ -144,20 +175,35 @@ public final class Clavenar {
   private static List<NormalizedToolCall> extractOpenAI(JsonNode tree) {
     List<NormalizedToolCall> out = new ArrayList<>();
     JsonNode choices = tree.path("choices");
-    if (choices.isArray()) {
-      for (JsonNode choice : choices) {
-        JsonNode toolCalls = choice.path("message").path("tool_calls");
-        if (toolCalls.isArray()) {
-          for (JsonNode tc : toolCalls) {
-            if (!"function".equals(tc.path("type").asText())) {
-              continue;
-            }
-            out.add(
-                NormalizedToolCall.fromJsonArguments(
-                    tc.path("id").asText(),
-                    tc.path("function").path("name").asText(),
-                    tc.path("function").path("arguments").asText("")));
+    if (!choices.isArray()) {
+      throw new ClavenarTransportException(
+          "clavenar: OpenAI response is missing its choices array");
+    }
+    for (JsonNode choice : choices) {
+      if (!choice.path("message").isObject()) {
+        throw new ClavenarTransportException(
+            "clavenar: OpenAI response contains a choice without a message");
+      }
+      JsonNode toolCalls = choice.path("message").path("tool_calls");
+      if (toolCalls.isArray()) {
+        for (JsonNode tc : toolCalls) {
+          if (!"function".equals(tc.path("type").asText())) {
+            throw new ClavenarTransportException(
+                "clavenar: OpenAI tool_call has an unsupported or missing type");
           }
+          if (!tc.path("id").isTextual()
+              || tc.path("id").asText().isEmpty()
+              || !tc.path("function").path("name").isTextual()
+              || tc.path("function").path("name").asText().isEmpty()
+              || !tc.path("function").path("arguments").isTextual()) {
+            throw new ClavenarTransportException(
+                "clavenar: OpenAI tool_call is missing a valid id, name, or arguments string");
+          }
+          out.add(
+              NormalizedToolCall.fromJsonArguments(
+                  tc.path("id").asText(),
+                  tc.path("function").path("name").asText(),
+                  tc.path("function").path("arguments").asText("")));
         }
       }
     }

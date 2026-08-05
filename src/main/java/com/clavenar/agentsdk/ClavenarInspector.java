@@ -24,7 +24,7 @@ public final class ClavenarInspector {
 
   /** Async variant of {@link #inspect}. */
   public CompletableFuture<Verdict> inspectAsync(NormalizedToolCall call) {
-    return CompletableFuture.supplyAsync(() -> Transport.inspect(call, opts));
+    return CompletableFuture.supplyAsync(() -> Transport.inspect(call, opts), opts.asyncExecutor());
   }
 
   /** A single {@code GET /pending/{id}} poll. */
@@ -108,7 +108,7 @@ public final class ClavenarInspector {
 
   /** Async variant of {@link #inspectAll}. */
   public CompletableFuture<Void> inspectAllAsync(List<NormalizedToolCall> calls) {
-    return CompletableFuture.runAsync(() -> inspectAll(calls));
+    return CompletableFuture.runAsync(() -> inspectAll(calls), opts.asyncExecutor());
   }
 
   /** Convenience: inspect one tool call whose arguments are already a {@link JsonNode}. */
@@ -119,5 +119,17 @@ public final class ClavenarInspector {
   /** Convenience: inspect one tool call whose arguments are a JSON-encoded string. */
   public void enforce(String toolName, String toolCallId, String argumentsJson) {
     inspectAll(List.of(NormalizedToolCall.fromJsonArguments(toolCallId, toolName, argumentsJson)));
+  }
+
+  void providerShapeError(String message) {
+    ClavenarTransportException error = new ClavenarTransportException(message);
+    if (opts.mode() == Mode.ENFORCE) {
+      throw error;
+    }
+    if (opts.onPolicyError() != null) {
+      opts.onPolicyError()
+          .accept(
+              error, new VerdictContext("<provider-stream>", "<unknown>", Json.MAPPER.nullNode()));
+    }
   }
 }

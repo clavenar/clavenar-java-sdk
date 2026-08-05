@@ -24,12 +24,12 @@ For an anonymous, byte-exact download of the current package and publication
 evidence:
 
 ```bash
-base=https://github.com/clavenar/clavenar-java-sdk/releases/download/v1.5.2
-curl -fsSLO "$base/agent-sdk-1.5.2.jar"
+base=https://github.com/clavenar/clavenar-java-sdk/releases/download/v1.5.3
+curl -fsSLO "$base/agent-sdk-1.5.3.jar"
 curl -fsSLO "$base/pom.xml"
 curl -fsSLO "$base/bom.json"
 curl -fsSLO "$base/bom.xml"
-jar tf agent-sdk-1.5.2.jar >/dev/null
+jar tf agent-sdk-1.5.3.jar >/dev/null
 ```
 
 Maven dependency:
@@ -38,14 +38,14 @@ Maven dependency:
 <dependency>
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.5.2</version>
+  <version>1.5.3</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.clavenar:agent-sdk:1.5.2")
+implementation("com.clavenar:agent-sdk:1.5.3")
 ```
 
 Requires Java 17+. The only runtime dependency is Jackson; the SDK takes
@@ -166,6 +166,28 @@ try {
   pending.resolve(); // blocks; returns on approve, throws ClavenarDenied on deny
 }
 ```
+
+Pending polling treats only network failures and 5xx responses as transient.
+Malformed success bodies, correlation mismatches, and every other HTTP status
+are terminal transport errors.
+
+## Governed execution
+
+Use `GovernedExecutionClient` when policy authorization and the provider effect
+must form a recoverable workflow. Supply an application-owned
+`DurableExecutionStore`, a cryptographic `AuthorizationVerifier`, a receipt
+signer, and an executor that forwards the supplied idempotency ID to the
+provider. The client verifies all authorization bindings before committing an
+intent or releasing an effect.
+
+On restart, a stored completion is integrity-checked and returned. A stored
+intent is passed to the optional `EffectRecoverer`; if it cannot conclusively
+find the provider effect, the client throws `ClavenarRecoveryRequired` instead
+of replaying it. Completion plus receipt-outbox persistence is bounded by the
+configured finalization deadline.
+
+`SecureTransportProfile` reuses its connection pool. Call `reload()` after
+rotating credential files and close the profile during application shutdown.
 
 ## Streaming
 

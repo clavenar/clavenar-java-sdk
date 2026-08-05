@@ -38,4 +38,15 @@ final class SecureTransportProfileTest {
             .build();
     assertThrows(ClavenarConfigException.class, profile::token);
   }
+
+  @Test
+  void closeIsIdempotentAndTerminal() {
+    SecureTransportProfile profile =
+        SecureTransportProfile.builder(Path.of("ca"), Path.of("cert"), Path.of("key"))
+            .tokenSource(() -> "token")
+            .build();
+    profile.close();
+    profile.close();
+    assertThrows(ClavenarConfigException.class, profile::token);
+  }
 }

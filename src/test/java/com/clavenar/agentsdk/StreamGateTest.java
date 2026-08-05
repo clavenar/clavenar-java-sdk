@@ -60,14 +60,14 @@ class StreamGateTest {
     StreamGate gate = new StreamGate(Fixtures.opts("http://127.0.0.1:9"));
     gate.start("0", "toolu_1", "f");
     gate.update("0", "", "", "not json");
-    assertThrows(ClavenarConfigException.class, () -> gate.close("0"));
+    assertThrows(ClavenarTransportException.class, () -> gate.close("0"));
   }
 
   @Test
   void missingIdName() {
     StreamGate gate = new StreamGate(Fixtures.opts("http://127.0.0.1:9"));
     gate.update("0", "", "", "{\"a\":1}");
-    assertThrows(ClavenarConfigException.class, () -> gate.close("0"));
+    assertThrows(ClavenarTransportException.class, () -> gate.close("0"));
   }
 
   @Test
@@ -105,5 +105,23 @@ class StreamGateTest {
       gate.close("0");
       assertEquals(List.of(VerdictKind.DENY), kinds);
     }
+  }
+
+  @Test
+  void terminalWithoutBufferFailsClosed() {
+    StreamGate gate = new StreamGate(Fixtures.opts("http://127.0.0.1:9"));
+    assertThrows(ClavenarTransportException.class, () -> gate.close("missing"));
+  }
+
+  @Test
+  void terminalWithoutBufferReportsAndPassesInObserve() {
+    List<String> errors = new java.util.ArrayList<>();
+    ClavenarOptions opts =
+        ClavenarOptions.builder("http://127.0.0.1:9")
+            .observe()
+            .onPolicyError((error, context) -> errors.add(error.getMessage()))
+            .build();
+    new StreamGate(opts).close("missing");
+    assertEquals(1, errors.size());
   }
 }

@@ -71,8 +71,9 @@ public final class ClavenarPending extends ClavenarException {
       try {
         view = pollOnce.get();
       } catch (ClavenarTransportException e) {
-        // 401 / 404 are terminal; everything else (5xx, network) is swallowed and retried.
-        if (e.status() == 401 || e.status() == 404) {
+        // Only network failures (status 0) and 5xx are transient. A malformed 200 or any 4xx is
+        // terminal and must not be hidden until the polling deadline.
+        if (e.status() != 0 && (e.status() < 500 || e.status() >= 600)) {
           throw e;
         }
       }

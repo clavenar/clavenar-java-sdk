@@ -78,6 +78,23 @@ class ResolveTest {
   }
 
   @Test
+  void malformed200IsTerminal() throws Exception {
+    AtomicInteger polls = new AtomicInteger();
+    try (TestServer srv =
+        new TestServer(
+            (m, p, b, h) -> {
+              polls.incrementAndGet();
+              return TestServer.Response.of(200, "{}");
+            })) {
+      ClavenarTransportException error =
+          assertThrows(
+              ClavenarTransportException.class, () -> pending(srv.baseUrl).resolve(fast()));
+      assertEquals(200, error.status());
+      assertEquals(1, polls.get());
+    }
+  }
+
+  @Test
   void swallows5xxThenAllow() throws Exception {
     AtomicInteger n = new AtomicInteger();
     try (TestServer srv =

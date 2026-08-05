@@ -16,6 +16,11 @@ public final class ClavenarTransportException extends ClavenarException {
     this.status = status;
   }
 
+  public ClavenarTransportException(String message, Throwable cause) {
+    super(message, cause);
+    this.status = 0;
+  }
+
   /** The HTTP status, or 0 when the request never received an HTTP response. */
   public int status() {
     return status;
