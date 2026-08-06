@@ -36,6 +36,11 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
   method through. `extractAnthropic` / `extractOpenAI` duck-type tool calls out of the response
   tree.
 - `Transport.java` — HTTP: `POST /mcp` inspection (with retry), `GET /pending/{id}` polling.
+- `GovernedExecutionClient.java` — durable intent/effect/completion
+  orchestration and uncertain-outcome recovery for
+  `clavenar.server-execution/v1`.
+- `SecureTransportProfile.java` — reusable mTLS/token client profile with
+  explicit complete-snapshot reload.
 - `StreamGate.java` — holds a tool call's closing event until a verdict returns (`start` /
   `update` / `close` for Anthropic block index, `closeByPrefix` for OpenAI per-choice drain).
 - `Realtime.java` — single function-call inspection (`Realtime.inspect`).
@@ -44,20 +49,24 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
 - `Verdict` / `VerdictKind` (`ALLOW`/`DENY`/`PENDING`/`RATE_LIMITED`) / `VerdictContext` /
   `VerdictDetail` — result + per-detector breakdown.
 - `ClavenarException` family — `ClavenarDenied`, `ClavenarPending`, `ClavenarRateLimited`,
-  `ClavenarTransportException`, `ClavenarConfigException`.
+  `ClavenarRecoveryRequired`, `ClavenarTransportException`,
+  `ClavenarConfigException`.
 - `NormalizedToolCall.java` — the normalized `(id, name, args)` shape extraction produces.
 - `Json.java` (shared Jackson `MAPPER`), `Mode`, `DevMode`, `ResolveOptions`, `RetryOptions`,
   `ClavenarPendingView`.
 - Tests in `src/test/java/...` (JUnit 5); `TestServer` / `Fixtures` back the transport tests.
 
 ## Conventions & invariants
-- After adding or updating a feature, also update the relevant `MANUAL_TESTS*` file(s) when needed.
 - **Inspection-before-execution is the contract.** A call must be inspected and clear policy
   *before* the tool runs. In enforce mode a block throws (`ClavenarDenied`) and a parked call
   throws `ClavenarPending` (call `resolve()` to wait for the human decision); in observe mode
   nothing throws — verdicts surface via `onVerdict`, transport errors via `onPolicyError`.
 - **Fail-closed.** In enforce mode a transport failure to reach the gateway throws
   `ClavenarTransportException` rather than silently allowing the call.
+- **Decision retries never repeat effects.** Side-effect-free decision calls
+  may retry transient failures. A governed effect is recovered by durable
+  idempotency state; uncertainty throws `ClavenarRecoveryRequired` instead of
+  invoking the tool again.
 - **`Clavenar.wrap` blocks streaming calls.** It inspects the non-streaming `create()`; a
   `createStreaming()` / `stream()` call through the proxy throws `ClavenarConfigException`
   (matching the TS/Python wrappers) — gate streamed tool calls with `StreamGate`, or set
