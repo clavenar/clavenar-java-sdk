@@ -1,16 +1,19 @@
 package com.clavenar.agentsdk;
 
+import java.io.Serial;
 import java.util.List;
 
 /** Thrown (enforce mode) when clavenar rejects a tool call. */
 public final class ClavenarDenied extends ClavenarException {
+  @Serial private static final long serialVersionUID = 1L;
+
   private final String toolName;
-  private final List<String> reasons;
-  private final List<String> reviewReasons;
+  private final transient List<String> reasons;
+  private final transient List<String> reviewReasons;
   private final String intentCategory;
   private final String layer;
   private final String correlationId;
-  private final VerdictDetail detail;
+  private final transient VerdictDetail detail;
 
   ClavenarDenied(
       String toolName,

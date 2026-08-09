@@ -1,5 +1,6 @@
 package com.clavenar.agentsdk;
 
+import java.io.Serial;
 import java.util.List;
 
 /**
@@ -9,9 +10,11 @@ import java.util.List;
  * #retryAfterSecs()} (set on {@code rate_limited} only) or fail the operation.
  */
 public final class ClavenarRateLimited extends ClavenarException {
+  @Serial private static final long serialVersionUID = 1L;
+
   private final String toolName;
   private final String code;
-  private final List<String> reasons;
+  private final transient List<String> reasons;
   private final Integer retryAfterSecs;
   private final String layer;
   private final String correlationId;

@@ -1,5 +1,6 @@
 package com.clavenar.agentsdk;
 
+import java.io.Serial;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -9,9 +10,11 @@ import java.util.function.Supplier;
  * ClavenarDenied} on deny.
  */
 public final class ClavenarPending extends ClavenarException {
+  @Serial private static final long serialVersionUID = 1L;
+
   private final String toolName;
   private final String correlationId;
-  private final List<String> reviewReasons;
+  private final transient List<String> reviewReasons;
   private final transient Supplier<ClavenarPendingView> pollOnce;
 
   ClavenarPending(
