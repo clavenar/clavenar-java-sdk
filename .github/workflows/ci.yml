@@ -92,3 +92,4 @@ jobs:
           path: |
             target/bom.json
             target/bom.xml
+          if-no-files-found: error
