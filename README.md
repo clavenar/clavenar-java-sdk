@@ -24,12 +24,12 @@ For an anonymous, byte-exact download of the current package and publication
 evidence:
 
 ```bash
-base=https://github.com/clavenar/clavenar-java-sdk/releases/download/v1.5.3
-curl -fsSLO "$base/agent-sdk-1.5.3.jar"
+base=https://github.com/clavenar/clavenar-java-sdk/releases/download/v1.5.4
+curl -fsSLO "$base/agent-sdk-1.5.4.jar"
 curl -fsSLO "$base/pom.xml"
 curl -fsSLO "$base/bom.json"
 curl -fsSLO "$base/bom.xml"
-jar tf agent-sdk-1.5.3.jar >/dev/null
+jar tf agent-sdk-1.5.4.jar >/dev/null
 ```
 
 Maven dependency:
@@ -38,14 +38,14 @@ Maven dependency:
 <dependency>
   <groupId>com.clavenar</groupId>
   <artifactId>agent-sdk</artifactId>
-  <version>1.5.3</version>
+  <version>1.5.4</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("com.clavenar:agent-sdk:1.5.3")
+implementation("com.clavenar:agent-sdk:1.5.4")
 ```
 
 Requires Java 17+. The only runtime dependency is Jackson; the SDK takes

@@ -5,6 +5,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-08-09
+
+### Changed
+
+- Make every compiler warning release-blocking, keep the complete exception
+  hierarchy explicitly serialization-versioned, and scope the third-party
+  schema validator's non-validation keyword chatter out of Maven output.
+
 ## [1.5.3] - 2026-08-05
 
 ### Added

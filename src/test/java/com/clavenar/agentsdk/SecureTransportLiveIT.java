@@ -6,14 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-final class SecureTransportLiveTest {
+final class SecureTransportLiveIT {
   @Test
   void realMtlsAndCertificateTokenRotation() throws Exception {
-    String endpoint = System.getenv("CLAVENAR_SECURE_TRANSPORT_ENDPOINT");
-    Assumptions.assumeTrue(endpoint != null && !endpoint.isBlank());
+    String endpoint = required("CLAVENAR_SECURE_TRANSPORT_ENDPOINT");
     Path cert = Path.of(required("CLAVENAR_SECURE_TRANSPORT_CLIENT_CERT"));
     Path key = Path.of(required("CLAVENAR_SECURE_TRANSPORT_CLIENT_KEY"));
     AtomicInteger generation = new AtomicInteger();
