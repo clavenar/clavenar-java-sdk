@@ -30,7 +30,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
-    <clavenar.version>1.5.4</clavenar.version>
+    <clavenar.version>1.5.5</clavenar.version>
   </properties>
 
   <modules>
