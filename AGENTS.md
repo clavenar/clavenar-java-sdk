@@ -17,7 +17,8 @@ mvn -B -DskipTests package   # SBOM (CycloneDX → target/bom.json / target/bom.
 
 CI (`.github/workflows/ci.yml`) runs `mvn -B verify` on a JDK 17 + 21 matrix, plus the SBOM job.
 Examples under `examples/` are a separate Maven reactor (`examples/pom.xml`); root `mvn verify`
-and CI do NOT build them — run `mvn -B -f examples/pom.xml verify` to check example changes.
+does not build them. CI has a separate examples job; run
+`mvn -B -f examples/pom.xml verify` locally to check example changes.
 
 Run: library, no binary. Public-API entry points: `ClavenarInspector` (`inspect` / `inspectAll`
 / `enforce`), `Clavenar.wrap`, `StreamGate`, `Realtime.inspect`. The SDK is a *client* of a
