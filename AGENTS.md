@@ -56,6 +56,9 @@ All source under `src/main/java/com/clavenar/agentsdk/` (Automatic-Module-Name
 - `Json.java` (shared Jackson `MAPPER`), `Mode`, `DevMode`, `ResolveOptions`, `RetryOptions`,
   `ClavenarPendingView`.
 - Tests in `src/test/java/...` (JUnit 5); `TestServer` / `Fixtures` back the transport tests.
+- `fixtures/` — byte-identical `client-migration-v1` and `retry-separation-v1`
+  (plus `sdk-cross-language-v1`) contracts; packaged into the Maven artifact
+  and asserted by fixture tests.
 
 ## Conventions & invariants
 - **Inspection-before-execution is the contract.** A call must be inspected and clear policy
